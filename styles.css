@@ -1,0 +1,423 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f6f8fa;
+  --fg: #24292f;
+  --border: #d0d7de;
+  --accent: #0969da;
+  --accent-contrast: #ffffff;
+  --header-bg: #ffffffcc;
+  --pane-bg: #ffffff;
+  --code-bg: #f6f8fa;
+  --code-fg: #24292f;
+}
+
+[data-theme="dark"] {
+  --bg: #0d1117;
+  --fg: #e6edf3;
+  --border: #30363d;
+  --accent: #4493f8;
+  --accent-contrast: #0d1117;
+  --header-bg: #161b22cc;
+  --pane-bg: #161b22;
+  --code-bg: #161b22;
+  --code-fg: #e6edf3;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+
+.app-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--header-bg);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.header-groups {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.logo-title h1 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+.pane-toolbar {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+}
+
+.editor-toolbar {
+  justify-content: flex-start;
+  justify-self: flex-start;
+  padding-right: 0.75rem;
+}
+
+.file-toolbar {
+  justify-content: flex-end;
+  justify-self: flex-end;
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--border);
+}
+
+.tool-btn,
+.file-btn,
+.responsive-toggle button,
+.theme-toggle {
+  border: 1px solid var(--border);
+  background: var(--pane-bg);
+  color: var(--fg);
+  padding: 0.35rem 0.6rem;
+  font-size: 0.85rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.tool-btn:hover,
+.file-btn:hover,
+.responsive-toggle button:hover,
+.tool-btn:focus,
+.file-btn:focus,
+.responsive-toggle button:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+
+.tool-btn:active,
+.file-btn:active,
+.responsive-toggle button:active,
+.responsive-toggle button[aria-pressed="true"],
+.theme-toggle:active {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.theme-toggle {
+  position: relative;
+  width: 64px;
+  height: 30px;
+  border-radius: 999px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  overflow: hidden;
+  gap: 0;
+  justify-self: end;
+}
+
+.theme-toggle::after {
+  content: "";
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.15);
+  top: 2px;
+  left: 2px;
+  transform: translateX(0);
+  transition: transform 0.2s ease;
+}
+
+.theme-toggle .icon {
+  font-size: 0.9rem;
+  line-height: 1;
+  z-index: 2;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+  color: var(--accent);
+}
+
+.theme-toggle .sun {
+  margin-right: 8px;
+}
+
+.theme-toggle .moon {
+  margin-left: 8px;
+}
+
+[data-theme="dark"] .theme-toggle::after {
+  transform: translateX(32px);
+}
+
+[data-theme="dark"] .theme-toggle .sun {
+  opacity: 0.35;
+}
+
+[data-theme="light"] .theme-toggle .moon {
+  opacity: 0.35;
+}
+
+.app-main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.pane {
+  background: var(--pane-bg);
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex: 1 1 50%;
+  min-width: 0;
+}
+
+.editor-pane textarea {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.95rem;
+  padding: 1rem;
+  width: 100%;
+  resize: none;
+  outline: none;
+  overflow: auto;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.preview-pane {
+  overflow: auto;
+}
+
+.markdown-body {
+  width: 100%;
+  padding: 1.5rem;
+  color: inherit;
+  font-size: 0.97rem;
+  line-height: 1.65;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.3em;
+  margin: 1.5em 0 0.8em;
+}
+
+.markdown-body pre,
+.markdown-body code {
+  background: var(--code-bg);
+  color: var(--code-fg);
+  border-radius: 6px;
+}
+
+.markdown-body pre {
+  padding: 1rem;
+  overflow: auto;
+}
+
+.markdown-body pre code {
+  background: transparent;
+  color: inherit;
+  font-size: 0.95em;
+}
+
+.markdown-body pre code.hljs {
+  background: transparent;
+  color: inherit;
+}
+
+[data-theme="dark"] .markdown-body pre code.hljs {
+  color: #e6edf3;
+}
+
+.markdown-body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1rem 0;
+}
+
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid var(--border);
+  padding: 0.5rem;
+}
+
+.markdown-body blockquote {
+  border-left: 4px solid var(--border);
+  padding: 0.5rem 1rem;
+  color: rgba(87, 96, 106, 0.9);
+  margin: 1rem;
+}
+
+.divider {
+  flex: 0 0 6px;
+  cursor: col-resize;
+  background: var(--border);
+  position: relative;
+}
+
+.divider::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 32px;
+  background: var(--accent);
+  opacity: 0;
+  border-radius: 2px;
+  transition: opacity 0.2s ease;
+}
+
+.divider:hover::after,
+.divider:focus::after,
+.divider.dragging::after {
+  opacity: 1;
+}
+
+.responsive-toggle {
+  margin-left: auto;
+  display: none;
+  gap: 0.25rem;
+}
+
+.header-groups + .responsive-toggle {
+  margin-left: auto;
+}
+
+.toast {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--pane-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+  font-size: 0.9rem;
+}
+
+body.dragging #drop-zone {
+  outline: 3px dashed var(--accent);
+  outline-offset: -5px;
+}
+
+@media (max-width: 960px) {
+  .app-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .header-groups {
+    width: 100%;
+    grid-template-columns: 1fr;
+    row-gap: 0.5rem;
+  }
+
+  .editor-toolbar,
+  .file-toolbar {
+    justify-content: flex-start;
+    justify-self: flex-start;
+  }
+
+  .editor-toolbar {
+    padding-right: 0;
+  }
+
+  .file-toolbar {
+    border-left: none;
+    padding-left: 0;
+  }
+
+  .responsive-toggle {
+    display: flex;
+    align-self: flex-end;
+  }
+
+  .theme-toggle {
+    justify-self: flex-start;
+  }
+
+  .app-main {
+    flex-direction: column;
+  }
+
+  .divider {
+    display: none;
+  }
+
+  .app-main.show-preview .editor-pane {
+    display: none;
+  }
+
+  .app-main.show-preview {
+    flex-direction: column;
+  }
+
+  .preview-pane {
+    display: none;
+  }
+
+  .app-main.show-preview .preview-pane {
+    display: block;
+  }
+}
+
+@media print {
+  body {
+    background: #fff;
+    color: #000;
+  }
+
+  .app-header,
+  .divider,
+  .editor-pane,
+  .toast {
+    display: none !important;
+  }
+
+  .app-main {
+    display: block;
+  }
+
+  .preview-pane {
+    display: block;
+    overflow: visible;
+  }
+
+  .markdown-body {
+    padding: 0;
+  }
+}
