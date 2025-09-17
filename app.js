@@ -44,6 +44,9 @@
   let isResizing = false;
   let startX = 0;
   let startWidth = 0;
+  const commandUndoStack = [];
+  const COMMAND_UNDO_LIMIT = 100;
+  let isRestoring = false;
 
   marked.setOptions({
     gfm: true,
@@ -154,6 +157,12 @@
       const modKey = isMac ? event.metaKey : event.ctrlKey;
       if (modKey) {
         switch (event.key.toLowerCase()) {
+          case 'z':
+            if (!event.shiftKey && performCommandUndo()) {
+              event.preventDefault();
+              return;
+            }
+            break;
           case 'b':
             event.preventDefault();
             applyFormatting('bold');
@@ -460,6 +469,9 @@
     const selected = value.slice(start, end);
 
     switch (action) {
+      case 'undo':
+        triggerUndo(start, end);
+        return;
       case 'bold':
         wrapSelection('**', '**', 'bold text');
         break;
@@ -468,6 +480,9 @@
         break;
       case 'inlineCode':
         wrapSelection('`', '`', 'code');
+        break;
+      case 'highlight':
+        wrapSelection('<mark>', '</mark>', 'highlight');
         break;
       case 'strikethrough':
         wrapSelection('~~', '~~', 'strikethrough');
@@ -480,6 +495,9 @@
         break;
       case 'link':
         insertLink(selected, start, end);
+        break;
+      case 'image':
+        insertImage(selected, start, end);
         break;
       case 'ul':
         prefixLines('- ');
@@ -506,6 +524,39 @@
       editor.focus();
     }
     editor.setSelectionRange(selectionStart, selectionEnd);
+  }
+
+  function triggerUndo(selectionStart, selectionEnd) {
+    ensureEditorFocus(selectionStart, selectionEnd);
+    if (performCommandUndo()) {
+      return;
+    }
+    let undone = false;
+    if (typeof document.queryCommandSupported === 'function' && document.queryCommandSupported('undo')) {
+      undone = document.execCommand('undo');
+    } else if (typeof document.execCommand === 'function') {
+      undone = document.execCommand('undo');
+    }
+    if (!undone) {
+      console.warn('Undo command not supported');
+    }
+    window.requestAnimationFrame(() => {
+      updatePreview();
+    });
+  }
+
+  function performCommandUndo() {
+    if (commandUndoStack.length === 0) {
+      return false;
+    }
+    const state = commandUndoStack.pop();
+    isRestoring = true;
+    editor.value = state.value;
+    editor.scrollTop = state.scrollTop;
+    editor.setSelectionRange(state.selectionStart, state.selectionEnd);
+    isRestoring = false;
+    dispatchInputEvent();
+    return true;
   }
 
   function wrapSelection(before, after, placeholder) {
@@ -586,6 +637,22 @@
     editor.setSelectionRange(cursor, cursor + text.length);
   }
 
+  function insertImage(selectedText, originalStart, originalEnd) {
+    const initialAlt = selectedText && selectedText.trim() ? selectedText.trim() : '';
+    const alt = initialAlt || window.prompt('Enter alt text', 'Image description') || 'Image';
+    const url = window.prompt('Enter image URL', 'https://');
+    if (!url) {
+      return;
+    }
+    ensureEditorFocus(originalStart, originalEnd);
+    const start = editor.selectionStart;
+    const end = editor.selectionEnd;
+    const markdown = `![${alt}](${url})`;
+    replaceRange(start, end, markdown);
+    const cursor = start + 2;
+    editor.setSelectionRange(cursor, cursor + alt.length);
+  }
+
   function prefixLines(prefix) {
     const selection = getSelectedLines();
     const prefixed = selection.lines.map((line) => {
@@ -617,14 +684,32 @@
   }
 
   function replaceRange(start, end, text) {
+    const previousValue = editor.value;
+    const currentSlice = previousValue.slice(start, end);
+    const shouldRecord = !isRestoring && currentSlice !== text;
+    if (shouldRecord) {
+      pushUndoState({
+        value: previousValue,
+        selectionStart: start,
+        selectionEnd: end,
+        scrollTop: editor.scrollTop
+      });
+    }
+
     if (typeof editor.setRangeText === 'function') {
       editor.setSelectionRange(start, end);
       editor.setRangeText(text, start, end, 'select');
       dispatchInputEvent();
     } else {
-      const value = editor.value;
-      editor.value = value.slice(0, start) + text + value.slice(end);
+      editor.value = previousValue.slice(0, start) + text + previousValue.slice(end);
       dispatchInputEvent();
+    }
+  }
+
+  function pushUndoState(state) {
+    commandUndoStack.push(state);
+    if (commandUndoStack.length > COMMAND_UNDO_LIMIT) {
+      commandUndoStack.shift();
     }
   }
 
@@ -633,6 +718,10 @@
       ? new window.InputEvent('input', { bubbles: true })
       : new Event('input', { bubbles: true });
     editor.dispatchEvent(event);
+  }
+
+  function clearCommandHistory() {
+    commandUndoStack.length = 0;
   }
 
   function getCurrentLine(value, position) {
@@ -683,6 +772,7 @@
     currentFileHandle = null;
     currentFileName = 'Untitled.md';
     editor.value = '';
+    clearCommandHistory();
     updatePreview();
     saveAutosave();
   }
@@ -792,6 +882,7 @@
 
   function loadDocument(content, name, handle) {
     editor.value = content;
+    clearCommandHistory();
     if (handle !== undefined) {
       currentFileHandle = handle;
     } else if (!supportsFileSystemAccess) {

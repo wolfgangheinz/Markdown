@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Offline Markdown Editor</title>
   <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/github.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
 </head>
 <body>
   <header class="app-header">
@@ -14,13 +14,16 @@
     </div>
     <div class="header-groups">
       <div class="pane-toolbar editor-toolbar" role="toolbar" aria-label="Editor formatting toolbar">
+        <button type="button" class="tool-btn" data-action="undo" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo">Undo</button>
         <button type="button" class="tool-btn" data-action="bold" title="Bold (Ctrl/Cmd+B)" aria-label="Bold"><span>Bold</span></button>
         <button type="button" class="tool-btn" data-action="italic" title="Italic (Ctrl/Cmd+I)" aria-label="Italic"><span>Italic</span></button>
         <button type="button" class="tool-btn" data-action="inlineCode" title="Inline Code" aria-label="Inline code"><span>`code`</span></button>
+        <button type="button" class="tool-btn" data-action="highlight" title="Highlight" aria-label="Highlight text"><span>Mark</span></button>
         <button type="button" class="tool-btn" data-action="strikethrough" title="Strikethrough" aria-label="Strikethrough"><span>Strike</span></button>
         <button type="button" class="tool-btn" data-action="heading" title="Heading (Ctrl/Cmd+1)" aria-label="Heading"><span>H1</span></button>
         <button type="button" class="tool-btn" data-action="code" title="Code Block (Ctrl/Cmd+` )" aria-label="Code Block"><span>&lt;/&gt;</span></button>
         <button type="button" class="tool-btn" data-action="link" title="Link (Ctrl/Cmd+K)" aria-label="Insert Link"><span>Link</span></button>
+        <button type="button" class="tool-btn" data-action="image" title="Image" aria-label="Insert image"><span>Image</span></button>
         <button type="button" class="tool-btn" data-action="ul" title="Bulleted List" aria-label="Bulleted List"><span>• List</span></button>
         <button type="button" class="tool-btn" data-action="ol" title="Numbered List" aria-label="Numbered List"><span>1. List</span></button>
         <button type="button" class="tool-btn" data-action="quote" title="Blockquote" aria-label="Blockquote"><span>"</span></button>
@@ -62,7 +65,7 @@
   
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/lib/common.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/common.min.js" defer></script>
   <script src="app.js" defer></script>
 </body>
 </html>

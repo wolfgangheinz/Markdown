@@ -234,6 +234,30 @@ body {
   margin: 1.5em 0 0.8em;
 }
 
+.markdown-body h1 {
+  font-size: 2rem;
+}
+
+.markdown-body h2 {
+  font-size: 1.6rem;
+}
+
+.markdown-body h3 {
+  font-size: 1.35rem;
+}
+
+.markdown-body h4 {
+  font-size: 1.15rem;
+}
+
+.markdown-body h5 {
+  font-size: 1.05rem;
+}
+
+.markdown-body h6 {
+  font-size: 1rem;
+}
+
 .markdown-body pre,
 .markdown-body code {
   background: var(--code-bg);
@@ -259,6 +283,17 @@ body {
 
 [data-theme="dark"] .markdown-body pre code.hljs {
   color: #e6edf3;
+}
+
+.markdown-body mark {
+  background: #fff2a8;
+  color: inherit;
+  padding: 0 0.2em;
+  border-radius: 0.2em;
+}
+
+[data-theme="dark"] .markdown-body mark {
+  background: rgba(255, 214, 10, 0.35);
 }
 
 .markdown-body table {
