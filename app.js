@@ -49,7 +49,8 @@
     gfm: true,
     breaks: true,
     headerIds: false,
-    mangle: false
+    mangle: false,
+    langPrefix: 'language-'
   });
 
   restoreTheme();
@@ -405,6 +406,7 @@
     const html = marked.parse(text);
     const clean = DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
     preview.innerHTML = clean;
+    promoteMultilineCode();
     if (window.hljs && typeof window.hljs.highlightElement === 'function') {
       preview.querySelectorAll('pre code').forEach((block) => {
         block.classList.add('hljs');
@@ -412,6 +414,33 @@
       });
     }
     enforceSafeLinks();
+  }
+
+  function promoteMultilineCode() {
+    preview.querySelectorAll('code').forEach((node) => {
+      if (node.closest('pre')) {
+        return;
+      }
+      if (!/\n/.test(node.textContent)) {
+        return;
+      }
+      const pre = document.createElement('pre');
+      const code = node.cloneNode(true);
+      pre.appendChild(code);
+      node.replaceWith(pre);
+      const wrapper = pre.parentElement;
+      if (wrapper && wrapper.tagName === 'P') {
+        const hasOnlyWhitespace = Array.from(wrapper.childNodes).every((child) => {
+          if (child === pre) {
+            return true;
+          }
+          return child.nodeType === Node.TEXT_NODE && !child.textContent.trim();
+        });
+        if (hasOnlyWhitespace) {
+          wrapper.replaceWith(pre);
+        }
+      }
+    });
   }
 
   function enforceSafeLinks() {
@@ -426,6 +455,7 @@
   function applyFormatting(action) {
     const start = editor.selectionStart;
     const end = editor.selectionEnd;
+    ensureEditorFocus(start, end);
     const value = editor.value;
     const selected = value.slice(start, end);
 
@@ -449,7 +479,7 @@
         insertFence();
         break;
       case 'link':
-        insertLink(selected);
+        insertLink(selected, start, end);
         break;
       case 'ul':
         prefixLines('- ');
@@ -469,14 +499,46 @@
       default:
         return;
     }
-    updatePreview();
+  }
+
+  function ensureEditorFocus(selectionStart, selectionEnd) {
+    if (document.activeElement !== editor) {
+      editor.focus();
+    }
+    editor.setSelectionRange(selectionStart, selectionEnd);
   }
 
   function wrapSelection(before, after, placeholder) {
     const start = editor.selectionStart;
     const end = editor.selectionEnd;
     const value = editor.value;
-    const selected = value.slice(start, end) || placeholder;
+    const hasSelection = start !== end;
+    let selected = value.slice(start, end);
+
+    if (!hasSelection) {
+      selected = placeholder;
+      const insertion = `${before}${selected}${after}`;
+      replaceRange(start, end, insertion);
+      const cursor = start + before.length;
+      editor.setSelectionRange(cursor, cursor + selected.length);
+      return;
+    }
+
+    if (selected.startsWith(before) && selected.endsWith(after)) {
+      const inner = selected.slice(before.length, selected.length - after.length);
+      replaceRange(start, end, inner);
+      editor.setSelectionRange(start, start + inner.length);
+      return;
+    }
+
+    const beforeStart = start - before.length;
+    const afterEnd = end + after.length;
+    if (beforeStart >= 0 && value.slice(beforeStart, start) === before && value.slice(end, afterEnd) === after) {
+      replaceRange(beforeStart, afterEnd, selected);
+      editor.setSelectionRange(beforeStart, beforeStart + selected.length);
+      return;
+    }
+
     const newText = `${before}${selected}${after}`;
     replaceRange(start, end, newText);
     const cursor = start + before.length;
@@ -509,12 +571,13 @@
     editor.setSelectionRange(cursorStart, cursorEnd);
   }
 
-  function insertLink(selectedText) {
+  function insertLink(selectedText, originalStart, originalEnd) {
     const text = selectedText || 'link text';
     const url = window.prompt('Enter URL', 'https://');
     if (!url) {
       return;
     }
+    ensureEditorFocus(originalStart, originalEnd);
     const start = editor.selectionStart;
     const end = editor.selectionEnd;
     const markdown = `[${text}](${url})`;
@@ -554,9 +617,22 @@
   }
 
   function replaceRange(start, end, text) {
-    const value = editor.value;
-    editor.value = value.slice(0, start) + text + value.slice(end);
-    editor.dispatchEvent(new Event('input'));
+    if (typeof editor.setRangeText === 'function') {
+      editor.setSelectionRange(start, end);
+      editor.setRangeText(text, start, end, 'select');
+      dispatchInputEvent();
+    } else {
+      const value = editor.value;
+      editor.value = value.slice(0, start) + text + value.slice(end);
+      dispatchInputEvent();
+    }
+  }
+
+  function dispatchInputEvent() {
+    const event = typeof window.InputEvent === 'function'
+      ? new window.InputEvent('input', { bubbles: true })
+      : new Event('input', { bubbles: true });
+    editor.dispatchEvent(event);
   }
 
   function getCurrentLine(value, position) {
