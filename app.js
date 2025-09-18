@@ -12,6 +12,13 @@
   const editorPane = document.querySelector('.editor-pane');
   const previewPane = document.querySelector('.preview-pane');
   const themeToggle = document.querySelector('.theme-toggle');
+  const docTitleInput = document.getElementById('document-title');
+  const draftManager = document.querySelector('.draft-manager');
+  const draftList = draftManager ? draftManager.querySelector('.draft-manager__list') : null;
+  const draftEmpty = draftManager ? draftManager.querySelector('.draft-manager__empty') : null;
+  const storageIndicator = draftManager ? draftManager.querySelector('.storage-indicator') : null;
+  const storageBar = draftManager ? draftManager.querySelector('.storage-bar span') : null;
+  const storageLabel = draftManager ? draftManager.querySelector('.storage-label') : null;
 
   if (!editor || !preview || !editorPane || !previewPane) {
     return;
@@ -31,10 +38,14 @@
     return;
   }
 
-  const AUTOSAVE_KEY = 'markdown-studio-autosave';
+  const DOCUMENTS_KEY = 'markdown-studio-documents';
+  const LEGACY_AUTOSAVE_KEY = 'markdown-studio-autosave';
   const SPLIT_KEY = 'markdown-studio-split';
   const THEME_KEY = 'markdown-studio-theme';
   const VIEW_KEY = 'markdown-studio-view';
+  const AUTOSAVE_DELAY = 3000;
+  const STORAGE_LIMIT_BYTES = 5 * 1024 * 1024;
+  const ILLEGAL_FILENAME = /[<>:"/\\|?*]+/;
   const EXPORT_STYLES = `body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;padding:2rem;background:#f6f8fa;color:#24292f;}[data-theme="dark"] body{background:#0d1117;color:#e6edf3;}a{color:#0969da;}code,pre{font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;border-radius:6px;}pre{padding:1rem;overflow:auto;background:#f6f8fa;color:#24292f;}[data-theme="dark"] pre{background:#161b22;color:#e6edf3;}code{background:#f6f8fa;color:#24292f;padding:0.15rem 0.4rem;}[data-theme="dark"] code{background:#161b22;color:#e6edf3;}table{border-collapse:collapse;width:100%;margin:1rem 0;}th,td{border:1px solid #d0d7de;padding:0.5rem;text-align:left;}blockquote{margin:1rem 0;padding:0.5rem 1rem;border-left:4px solid #d0d7de;color:rgba(87,96,106,0.9);}h1,h2,h3,h4,h5,h6{border-bottom:1px solid #d0d7de;padding-bottom:0.3em;margin:1.5em 0 0.8em;}img{max-width:100%;}article.markdown-body{max-width:860px;margin:0 auto;background:rgba(255,255,255,0.97);padding:2rem;border-radius:12px;box-shadow:0 10px 30px rgba(15,23,42,0.08);font-size:0.97rem;line-height:1.65;}article.markdown-body pre{margin:1.5rem 0;}[data-theme="dark"] article.markdown-body{background:#161b22;color:#e6edf3;box-shadow:0 10px 30px rgba(0,0,0,0.45);}`;
 
   const supportsFileSystemAccess = typeof window.showOpenFilePicker === 'function' && typeof window.showSaveFilePicker === 'function';
@@ -47,6 +58,12 @@
   const commandUndoStack = [];
   const COMMAND_UNDO_LIMIT = 100;
   let isRestoring = false;
+  let documents = {};
+  let currentDocumentId = null;
+  let autosaveTimer = 0;
+  let quotaToastShown = false;
+  let turndownService = null;
+  const fileHandles = new Map();
 
   marked.setOptions({
     gfm: true,
@@ -56,11 +73,24 @@
     langPrefix: 'language-'
   });
 
+  if (typeof window.TurndownService === 'function') {
+    turndownService = new window.TurndownService({
+      headingStyle: 'atx',
+      codeBlockStyle: 'fenced',
+      bulletListMarker: '-'
+    });
+    turndownService.addRule('mark', {
+      filter: ['mark'],
+      replacement(content) {
+        return content ? `==${content}==` : '';
+      }
+    });
+  }
+
   restoreTheme();
   restoreSplit();
   restoreView();
-  restoreAutosave();
-  updatePreview();
+  restoreDocuments();
   editor.focus();
 
   bindEditor();
@@ -71,6 +101,8 @@
   bindResponsiveToggle();
   bindAutosave();
   bindThemeToggle();
+  bindDocumentTitle();
+  bindDraftManager();
 
   function restoreTheme() {
     const stored = localStorage.getItem(THEME_KEY);
@@ -99,53 +131,113 @@
     }
   }
 
-  function restoreAutosave() {
+  function restoreDocuments() {
+    documents = {};
+    currentDocumentId = null;
     try {
-      const raw = localStorage.getItem(AUTOSAVE_KEY);
+      const raw = localStorage.getItem(DOCUMENTS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          if (parsed.documents && typeof parsed.documents === 'object') {
+            Object.keys(parsed.documents).forEach((id) => {
+              const doc = parsed.documents[id];
+              if (!doc || typeof doc !== 'object') {
+                return;
+              }
+              if (!doc.id || typeof doc.id !== 'string') {
+                return;
+              }
+              const name = sanitizeName(doc.name || doc.fileName || generateUntitledName(), generateUntitledName());
+              documents[doc.id] = {
+                id: doc.id,
+                name,
+                content: typeof doc.content === 'string' ? doc.content : '',
+                updatedAt: typeof doc.updatedAt === 'number' ? doc.updatedAt : Date.now()
+              };
+            });
+          }
+          if (parsed.currentId && typeof parsed.currentId === 'string' && documents[parsed.currentId]) {
+            currentDocumentId = parsed.currentId;
+          }
+        }
+      } else {
+        migrateLegacyAutosave();
+      }
+    } catch (err) {
+      console.warn('Document restore failed', err);
+    }
+
+    if (!currentDocumentId || !documents[currentDocumentId]) {
+      const ordered = Object.values(documents).sort((a, b) => b.updatedAt - a.updatedAt);
+      currentDocumentId = ordered.length > 0 ? ordered[0].id : null;
+    }
+
+    if (!currentDocumentId) {
+      currentDocumentId = createDocument(generateUntitledName(), '', { persist: false, render: false, focus: false });
+    }
+
+    setCurrentDocument(currentDocumentId, { focus: false, skipHistory: true });
+    renderDraftList();
+    updateStorageIndicator();
+  }
+
+  function migrateLegacyAutosave() {
+    try {
+      const raw = localStorage.getItem(LEGACY_AUTOSAVE_KEY);
       if (!raw) {
         return;
       }
-      const saved = JSON.parse(raw);
-      if (saved && typeof saved.content === 'string') {
-        editor.value = saved.content;
-        if (saved.fileName) {
-          currentFileName = saved.fileName;
-        }
+      const legacy = JSON.parse(raw);
+      const content = legacy && typeof legacy.content === 'string' ? legacy.content : '';
+      const name = sanitizeName(legacy && legacy.fileName ? legacy.fileName : generateUntitledName(), generateUntitledName());
+      const id = createDocument(name, content, { persist: false, render: false, focus: false });
+      const doc = documents[id];
+      if (doc) {
+        doc.updatedAt = legacy && typeof legacy.ts === 'number' ? legacy.ts : Date.now();
       }
+      currentDocumentId = id;
+      localStorage.removeItem(LEGACY_AUTOSAVE_KEY);
     } catch (err) {
-      console.warn('Autosave restore failed', err);
+      console.warn('Legacy autosave migration failed', err);
     }
   }
 
   function bindAutosave() {
     editor.addEventListener('input', () => {
+      const doc = getCurrentDocument();
+      if (doc) {
+        doc.content = editor.value;
+        doc.updatedAt = Date.now();
+      }
       scheduleAutosave();
       updatePreview();
     });
   }
 
-  let autosaveTimer = 0;
   function scheduleAutosave() {
     if (autosaveTimer) {
       clearTimeout(autosaveTimer);
     }
     autosaveTimer = window.setTimeout(() => {
       autosaveTimer = 0;
-      saveAutosave();
-    }, 400);
+      saveDocumentsToStorage();
+    }, AUTOSAVE_DELAY);
   }
 
-  function saveAutosave() {
+  function saveDocumentsToStorage() {
     try {
-      const payload = { content: editor.value, fileName: currentFileName, ts: Date.now() };
-      localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(payload));
+      const payload = JSON.stringify({ currentId: currentDocumentId, documents });
+      localStorage.setItem(DOCUMENTS_KEY, payload);
+      updateStorageIndicator(payload);
     } catch (err) {
       console.warn('Autosave failed', err);
     }
   }
 
-  function clearAutosave() {
-    localStorage.removeItem(AUTOSAVE_KEY);
+  function clearCurrentDraft() {
+    deleteDocument(currentDocumentId);
+    showToast('Draft cleared');
   }
 
   function bindEditor() {
@@ -194,6 +286,39 @@
         }
       }
     });
+
+    editor.addEventListener('paste', handlePaste);
+  }
+
+  function handlePaste(event) {
+    if (!event || !event.clipboardData || !turndownService) {
+      return;
+    }
+    const html = event.clipboardData.getData('text/html');
+    if (!html) {
+      return;
+    }
+    const plain = event.clipboardData.getData('text/plain');
+    let markdown = '';
+    try {
+      markdown = turndownService.turndown(html);
+    } catch (error) {
+      console.warn('Rich text paste conversion failed', error);
+    }
+    if (!markdown) {
+      markdown = plain;
+    }
+    if (!markdown) {
+      return;
+    }
+    event.preventDefault();
+    const start = editor.selectionStart;
+    const end = editor.selectionEnd;
+    ensureEditorFocus(start, end);
+    replaceRange(start, end, markdown);
+    const cursor = start + markdown.length;
+    editor.setSelectionRange(cursor, cursor);
+    showToast(markdown !== plain ? 'Converted rich text to Markdown' : 'Pasted as plain text—review formatting');
   }
 
   function bindToolbar() {
@@ -247,8 +372,10 @@
           copyRenderedHtml();
           break;
         case 'clearAutosave':
-          clearAutosave();
-          showToast('Draft cleared');
+          clearCurrentDraft();
+          break;
+        case 'manageDrafts':
+          openDraftManager();
           break;
       }
     });
@@ -257,8 +384,7 @@
       const file = event.target.files && event.target.files[0];
       if (file) {
         const text = await file.text();
-        loadDocument(text, file.name, null);
-        showToast(`Loaded ${file.name}`);
+        importFileContent(text, file.name, null);
       }
       fileInput.value = '';
     });
@@ -365,13 +491,8 @@
         return;
       }
       const file = files[0];
-      if (!/\.(md|markdown|txt)$/i.test(file.name)) {
-        showToast('Unsupported file type');
-        return;
-      }
       const text = await file.text();
-      loadDocument(text, file.name, null);
-      showToast(`Loaded ${file.name}`);
+      importFileContent(text, file.name, null);
     });
   }
 
@@ -764,17 +885,565 @@
     };
   }
 
-  function confirmNew() {
-    const keep = window.confirm('Clear current document?');
-    if (!keep) {
+  function getCurrentDocument() {
+    if (!currentDocumentId || !documents[currentDocumentId]) {
+      return null;
+    }
+    return documents[currentDocumentId];
+  }
+
+  function setCurrentDocument(id, options = {}) {
+    const doc = id && documents[id] ? documents[id] : null;
+    if (!doc) {
       return;
     }
-    currentFileHandle = null;
-    currentFileName = 'Untitled.md';
-    editor.value = '';
+    currentDocumentId = id;
+    editor.value = doc.content || '';
     clearCommandHistory();
     updatePreview();
-    saveAutosave();
+    currentFileName = doc.name || 'Untitled.md';
+    currentFileHandle = fileHandles.get(id) || null;
+    updateDocumentTitle();
+    if (options.focus !== false) {
+      editor.focus();
+    }
+    if (options.render !== false) {
+      renderDraftList();
+    }
+  }
+
+  function updateDocumentTitle() {
+    if (!docTitleInput) {
+      return;
+    }
+    const doc = getCurrentDocument();
+    docTitleInput.value = doc ? doc.name : 'Untitled.md';
+    docTitleInput.title = doc ? doc.name : '';
+  }
+
+  function createDocument(name, content, options = {}) {
+    const opts = {
+      makeCurrent: true,
+      persist: true,
+      render: true,
+      focus: true,
+      extension: '.md',
+      ...options
+    };
+    const fallback = generateUntitledName(opts.extension);
+    const sanitized = sanitizeName(typeof name === 'string' ? name : '', fallback);
+    const resolvedName = resolveNameConflict(sanitized, null);
+    const id = typeof window.crypto !== 'undefined' && typeof window.crypto.randomUUID === 'function'
+      ? window.crypto.randomUUID()
+      : `doc-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6)}`;
+    documents[id] = {
+      id,
+      name: resolvedName,
+      content: typeof content === 'string' ? content : '',
+      updatedAt: Date.now()
+    };
+    fileHandles.delete(id);
+    if (opts.makeCurrent) {
+      setCurrentDocument(id, { focus: opts.focus, render: opts.render });
+    } else if (opts.render) {
+      renderDraftList();
+    }
+    if (opts.persist) {
+      saveDocumentsToStorage();
+    }
+    return id;
+  }
+
+  function deleteDocument(id, options = {}) {
+    if (!id || !documents[id]) {
+      return;
+    }
+    fileHandles.delete(id);
+    delete documents[id];
+    let nextId = currentDocumentId;
+    if (currentDocumentId === id) {
+      const remaining = Object.values(documents).sort((a, b) => b.updatedAt - a.updatedAt);
+      if (remaining.length > 0) {
+        nextId = remaining[0].id;
+        setCurrentDocument(nextId, { focus: options.focus !== false, render: options.render !== false });
+      } else {
+        const newId = createDocument(generateUntitledName(), '', { persist: false, render: options.render !== false, focus: options.focus !== false });
+        nextId = newId;
+      }
+    } else if (options.refreshCurrent) {
+      setCurrentDocument(currentDocumentId, { focus: false, render: options.render !== false });
+    }
+    if (options.persist !== false) {
+      saveDocumentsToStorage();
+    }
+    if (options.render !== false) {
+      renderDraftList();
+    }
+  }
+
+  function renameDocument(id, proposedName, options = {}) {
+    const doc = id && documents[id] ? documents[id] : null;
+    if (!doc) {
+      return '';
+    }
+    const notify = options.notify !== false;
+    const fallback = doc.name || generateUntitledName();
+    const raw = typeof proposedName === 'string' ? proposedName.trim() : '';
+    const sanitized = sanitizeName(raw || fallback, fallback);
+    const currentExt = splitName(doc.name).ext || '.md';
+    let candidate = sanitized;
+    if (!/\.[^.]+$/.test(candidate)) {
+      candidate = sanitizeName(`${candidate}${currentExt || '.md'}`, `${splitName(doc.name).base}${currentExt || '.md'}`);
+    }
+    const resolved = resolveNameConflict(candidate, id);
+    const cleaned = sanitized !== (raw || fallback);
+    const conflicted = resolved !== candidate;
+    const changed = resolved !== doc.name;
+    doc.name = resolved;
+    doc.updatedAt = Date.now();
+    if (id === currentDocumentId) {
+      currentFileName = resolved;
+      updateDocumentTitle();
+    }
+    if (options.persist !== false) {
+      saveDocumentsToStorage();
+    }
+    if (options.render !== false) {
+      renderDraftList();
+    }
+    if (notify) {
+      if (cleaned && conflicted) {
+        showToast('Name adjusted to remove invalid characters and ensure uniqueness');
+      } else if (cleaned) {
+        showToast('Removed invalid characters from name');
+      } else if (conflicted) {
+        showToast('Name already existed; added a suffix');
+      } else if (changed) {
+        showToast('Document renamed');
+      }
+    }
+    return doc.name;
+  }
+
+  function generateUntitledName(extension = '.md') {
+    const ext = typeof extension === 'string' && extension.startsWith('.') ? extension : '.md';
+    const base = 'Untitled';
+    const existing = new Set(Object.values(documents).map((doc) => doc.name.toLowerCase()));
+    let counter = 1;
+    let candidate = `${base}${ext}`;
+    while (existing.has(candidate.toLowerCase())) {
+      counter += 1;
+      candidate = `${base} ${counter}${ext}`;
+    }
+    return candidate;
+  }
+
+  function resolveNameConflict(name, excludeId) {
+    if (!name) {
+      return generateUntitledName();
+    }
+    const normalized = name.toLowerCase();
+    const existing = new Set(
+      Object.values(documents)
+        .filter((doc) => doc.id !== excludeId)
+        .map((doc) => doc.name.toLowerCase())
+    );
+    if (!existing.has(normalized)) {
+      return name;
+    }
+    const { base, ext } = splitName(name);
+    let counter = 2;
+    let candidate = `${base} ${counter}${ext}`;
+    while (existing.has(candidate.toLowerCase())) {
+      counter += 1;
+      candidate = `${base} ${counter}${ext}`;
+    }
+    return candidate;
+  }
+
+  function splitName(name) {
+    if (!name) {
+      return { base: 'Untitled', ext: '.md' };
+    }
+    const trimmed = name.trim();
+    const index = trimmed.lastIndexOf('.');
+    if (index > 0 && index < trimmed.length - 1) {
+      return {
+        base: trimmed.slice(0, index).trim() || 'Untitled',
+        ext: trimmed.slice(index)
+      };
+    }
+    return { base: trimmed, ext: '' };
+  }
+
+  function sanitizeName(name, fallback) {
+    const baseFallback = typeof fallback === 'string' && fallback.trim() ? fallback.trim() : 'Untitled.md';
+    if (typeof name !== 'string') {
+      return baseFallback;
+    }
+    let clean = name
+      .replace(/[\u0000-\u001F\u007F]/g, '')
+      .replace(/[<>:"/\\|?*]+/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    clean = clean.replace(/[\. ]+$/, '');
+    if (!clean) {
+      return baseFallback;
+    }
+    if (clean.length > 120) {
+      clean = clean.slice(0, 120).trim();
+    }
+    return clean;
+  }
+
+  function renderDraftList() {
+    if (!draftList || !draftEmpty) {
+      return;
+    }
+    const docs = Object.values(documents).sort((a, b) => b.updatedAt - a.updatedAt);
+    draftList.innerHTML = '';
+    if (docs.length === 0) {
+      draftEmpty.hidden = false;
+      return;
+    }
+    draftEmpty.hidden = true;
+    const fragment = document.createDocumentFragment();
+    docs.forEach((doc) => {
+      const item = document.createElement('li');
+      item.className = 'draft-item';
+      item.dataset.id = doc.id;
+      if (doc.id === currentDocumentId) {
+        item.classList.add('draft-item--active');
+      }
+      const nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.value = doc.name;
+      nameInput.className = 'draft-item__name';
+      nameInput.dataset.id = doc.id;
+      nameInput.setAttribute('maxlength', '120');
+
+      const actions = document.createElement('div');
+      actions.className = 'draft-item__actions';
+
+      const openButton = document.createElement('button');
+      openButton.type = 'button';
+      openButton.dataset.action = 'openDraft';
+      openButton.dataset.id = doc.id;
+      openButton.textContent = 'Open';
+
+      const deleteButton = document.createElement('button');
+      deleteButton.type = 'button';
+      deleteButton.dataset.action = 'deleteDraft';
+      deleteButton.dataset.id = doc.id;
+      deleteButton.textContent = 'Delete';
+
+      actions.appendChild(openButton);
+      actions.appendChild(deleteButton);
+
+      const meta = document.createElement('span');
+      meta.className = 'draft-item__meta';
+      meta.textContent = formatRelativeTime(doc.updatedAt);
+
+      item.appendChild(nameInput);
+      item.appendChild(actions);
+      item.appendChild(meta);
+      fragment.appendChild(item);
+    });
+    draftList.appendChild(fragment);
+  }
+
+  function formatRelativeTime(timestamp) {
+    if (!timestamp) {
+      return '—';
+    }
+    const diff = Date.now() - timestamp;
+    if (diff < 60 * 1000) {
+      return 'Just now';
+    }
+    if (diff < 60 * 60 * 1000) {
+      const mins = Math.round(diff / (60 * 1000));
+      return `${mins}m ago`;
+    }
+    if (diff < 24 * 60 * 60 * 1000) {
+      const hours = Math.round(diff / (60 * 60 * 1000));
+      return `${hours}h ago`;
+    }
+    return new Date(timestamp).toLocaleDateString();
+  }
+
+  function updateStorageIndicator(serialized) {
+    if (!storageIndicator || !storageBar || !storageLabel) {
+      return;
+    }
+    let payload = serialized;
+    if (!payload) {
+      try {
+        payload = JSON.stringify({ currentId: currentDocumentId, documents });
+      } catch (error) {
+        payload = '';
+      }
+    }
+    let bytes = payload.length;
+    if (typeof window.TextEncoder === 'function') {
+      bytes = new TextEncoder().encode(payload).length;
+    }
+    const percent = STORAGE_LIMIT_BYTES > 0 ? Math.min(100, Math.round((bytes / STORAGE_LIMIT_BYTES) * 100)) : 0;
+    storageBar.style.width = `${percent}%`;
+    const usedMb = (bytes / (1024 * 1024)).toFixed(2);
+    storageLabel.textContent = `Storage usage: ${percent}% (~${usedMb} MB of 5 MB)`;
+    storageIndicator.classList.remove('storage-indicator--warn', 'storage-indicator--danger');
+    if (percent >= 90) {
+      storageIndicator.classList.add('storage-indicator--danger');
+      if (!quotaToastShown) {
+        showToast('Storage almost full. Delete drafts to free space.');
+        quotaToastShown = true;
+      }
+    } else if (percent >= 75) {
+      storageIndicator.classList.add('storage-indicator--warn');
+      quotaToastShown = false;
+    } else {
+      quotaToastShown = false;
+    }
+  }
+
+  function bindDocumentTitle() {
+    if (!docTitleInput) {
+      return;
+    }
+    docTitleInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        docTitleInput.blur();
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        updateDocumentTitle();
+        docTitleInput.blur();
+      }
+    });
+
+    docTitleInput.addEventListener('blur', () => {
+      const doc = getCurrentDocument();
+      if (!doc) {
+        return;
+      }
+      const updated = renameDocument(doc.id, docTitleInput.value, { notify: false });
+      docTitleInput.value = updated;
+    });
+  }
+
+  function bindDraftManager() {
+    if (!draftManager) {
+      return;
+    }
+    draftManager.addEventListener('click', (event) => {
+      const actionEl = event.target.closest('[data-action]');
+      if (!actionEl) {
+        return;
+      }
+      const action = actionEl.dataset.action;
+      const id = actionEl.dataset.id;
+      switch (action) {
+        case 'closeDrafts':
+          closeDraftManager();
+          break;
+        case 'openDraft':
+          if (id && documents[id]) {
+            setCurrentDocument(id, { focus: true });
+            closeDraftManager();
+            showToast(`Switched to ${documents[id].name}`);
+          }
+          break;
+        case 'deleteDraft':
+          if (id) {
+            const doc = documents[id];
+            deleteDocument(id);
+            showToast(doc ? `Deleted ${doc.name}` : 'Draft deleted');
+          }
+          break;
+        default:
+          break;
+      }
+    });
+
+    if (draftList) {
+      draftList.addEventListener('keydown', (event) => {
+        const input = event.target;
+        if (!input || !input.classList.contains('draft-item__name')) {
+          return;
+        }
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          input.blur();
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          const doc = documents[input.dataset.id];
+          input.value = doc ? doc.name : input.value;
+          input.blur();
+        }
+      });
+
+      draftList.addEventListener('focusout', (event) => {
+        const input = event.target;
+        if (!input || !input.classList.contains('draft-item__name')) {
+          return;
+        }
+        const id = input.dataset.id;
+        const updated = renameDocument(id, input.value, { notify: false });
+        input.value = updated;
+      });
+    }
+  }
+
+  function openDraftManager() {
+    if (!draftManager) {
+      return;
+    }
+    renderDraftList();
+    draftManager.hidden = false;
+    draftManager.setAttribute('aria-hidden', 'false');
+    document.addEventListener('keydown', handleDraftManagerKeydown);
+    window.requestAnimationFrame(() => {
+      const active = draftList ? draftList.querySelector('.draft-item--active .draft-item__name') : null;
+      const fallback = draftList ? draftList.querySelector('.draft-item__name') : null;
+      const target = active || fallback;
+      if (target && typeof target.focus === 'function') {
+        target.focus();
+        target.select();
+      }
+    });
+  }
+
+  function closeDraftManager() {
+    if (!draftManager) {
+      return;
+    }
+    draftManager.hidden = true;
+    draftManager.setAttribute('aria-hidden', 'true');
+    document.removeEventListener('keydown', handleDraftManagerKeydown);
+  }
+
+  function handleDraftManagerKeydown(event) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeDraftManager();
+    }
+  }
+
+  function detectContentType(name, content) {
+    if (typeof name === 'string') {
+      if (/\.(html?|xhtml)$/i.test(name)) {
+        return 'html';
+      }
+      if (/\.(txt|text)$/i.test(name)) {
+        return 'txt';
+      }
+      if (/\.(md|markdown)$/i.test(name)) {
+        return 'md';
+      }
+    }
+    if (typeof content === 'string' && /<\s*(html|body|div|p|h[1-6]|table|article)/i.test(content)) {
+      return 'html';
+    }
+    return 'md';
+  }
+
+  function stripHtml(html) {
+    const temp = document.createElement('div');
+    temp.innerHTML = html;
+    return temp.textContent || temp.innerText || '';
+  }
+
+  function prepareImportedDocument(content, name, excludeId) {
+    const type = detectContentType(name, content);
+    const fallback = type === 'txt' ? generateUntitledName('.txt') : generateUntitledName('.md');
+    let sanitizedName = sanitizeName(typeof name === 'string' ? name : '', fallback);
+    if (!/\.[^.]+$/.test(sanitizedName)) {
+      const inferredExt = type === 'txt' ? '.txt' : type === 'html' ? '.html' : '.md';
+      sanitizedName = sanitizeName(`${sanitizedName}${inferredExt}`, fallback);
+    }
+    let markdown = typeof content === 'string' ? content.replace(/\r\n?/g, '\n') : '';
+    let toast = name ? `Loaded ${name}` : 'Loaded document';
+    if (type === 'html') {
+      const base = splitName(sanitizedName).base || 'Converted';
+      if (turndownService) {
+        try {
+          markdown = turndownService.turndown(content);
+          toast = name ? `Converted ${name} from HTML` : 'Converted HTML to Markdown';
+        } catch (error) {
+          console.warn('HTML conversion failed', error);
+          markdown = stripHtml(content).replace(/\r\n?/g, '\n');
+          toast = 'HTML conversion failed. Imported as plain text—please review.';
+        }
+      } else {
+        markdown = stripHtml(content).replace(/\r\n?/g, '\n');
+        toast = 'HTML conversion unavailable. Imported as plain text—please review.';
+      }
+      sanitizedName = sanitizeName(`${base}.md`, generateUntitledName('.md'));
+    } else if (type === 'txt') {
+      toast = name ? `Loaded ${name}` : 'Loaded text file';
+    }
+    const uniqueName = resolveNameConflict(sanitizedName, excludeId);
+    return {
+      type,
+      name: uniqueName,
+      content: markdown,
+      toast
+    };
+  }
+
+  function importFileContent(content, name, handle) {
+    const current = getCurrentDocument();
+    const prepared = prepareImportedDocument(content, name, current ? current.id : null);
+    let targetId = currentDocumentId;
+    const canReuseCurrent = current
+      && (!current.content || current.content.trim() === '')
+      && /^untitled/i.test(current.name || '');
+    if (canReuseCurrent) {
+      current.content = prepared.content;
+      current.name = prepared.name;
+      current.updatedAt = Date.now();
+      currentFileName = current.name;
+      if (handle) {
+        fileHandles.set(current.id, handle);
+        currentFileHandle = handle;
+      } else {
+        fileHandles.delete(current.id);
+        currentFileHandle = null;
+      }
+      editor.value = prepared.content;
+      clearCommandHistory();
+      updatePreview();
+      updateDocumentTitle();
+      saveDocumentsToStorage();
+      renderDraftList();
+      targetId = current.id;
+    } else {
+      const id = createDocument(prepared.name, prepared.content, { focus: true, persist: false, render: false });
+      if (handle) {
+        fileHandles.set(id, handle);
+        currentFileHandle = handle;
+      } else {
+        fileHandles.delete(id);
+        currentFileHandle = null;
+      }
+      saveDocumentsToStorage();
+      renderDraftList();
+      targetId = id;
+    }
+    if (prepared.toast) {
+      showToast(prepared.toast);
+    }
+    return targetId;
+  }
+
+  function confirmNew() {
+    const shouldCreate = window.confirm('Start a new document? Current changes remain in drafts.');
+    if (!shouldCreate) {
+      return;
+    }
+    createDocument(generateUntitledName(), '', { focus: true });
+    currentFileHandle = null;
+    showToast('New document ready');
   }
 
   async function triggerOpen() {
@@ -783,9 +1452,11 @@
         const [handle] = await window.showOpenFilePicker({
           types: [
             {
-              description: 'Markdown Files',
+              description: 'Markdown or Text Files',
               accept: {
-                'text/markdown': ['.md', '.markdown']
+                'text/markdown': ['.md', '.markdown'],
+                'text/plain': ['.txt'],
+                'text/html': ['.html', '.htm']
               }
             }
           ],
@@ -797,8 +1468,7 @@
         }
         const file = await handle.getFile();
         const text = await file.text();
-        loadDocument(text, file.name, handle);
-        showToast(`Opened ${file.name}`);
+        importFileContent(text, file.name, handle);
       } catch (error) {
         if (error && error.name !== 'AbortError') {
           console.error(error);
@@ -811,6 +1481,12 @@
   }
 
   async function triggerSave() {
+    const doc = getCurrentDocument();
+    if (!doc) {
+      return;
+    }
+    doc.content = editor.value;
+    doc.updatedAt = Date.now();
     if (supportsFileSystemAccess) {
       if (!currentFileHandle) {
         await triggerSaveAs();
@@ -819,22 +1495,28 @@
       await writeFile(currentFileHandle);
       showToast('Saved');
     } else {
-      downloadFile(currentFileName);
+      downloadFile(doc.name || 'document.md');
       showToast('Downloaded');
     }
-    saveAutosave();
+    saveDocumentsToStorage();
+    renderDraftList();
   }
 
   async function triggerSaveAs() {
+    const doc = getCurrentDocument();
+    if (!doc) {
+      return;
+    }
     if (supportsFileSystemAccess) {
       try {
         const handle = await window.showSaveFilePicker({
-          suggestedName: currentFileName,
+          suggestedName: doc.name || 'document.md',
           types: [
             {
-              description: 'Markdown Files',
+              description: 'Markdown or Text Files',
               accept: {
-                'text/markdown': ['.md', '.markdown']
+                'text/markdown': ['.md', '.markdown'],
+                'text/plain': ['.txt']
               }
             }
           ]
@@ -843,10 +1525,15 @@
           return;
         }
         currentFileHandle = handle;
-        currentFileName = handle.name || currentFileName;
+        fileHandles.set(doc.id, handle);
+        const handleName = handle.name || doc.name;
+        if (handleName) {
+          renameDocument(doc.id, handleName, { notify: false, persist: false, render: false });
+        }
         await writeFile(handle);
         showToast('Saved');
-        saveAutosave();
+        saveDocumentsToStorage();
+        renderDraftList();
       } catch (error) {
         if (error && error.name !== 'AbortError') {
           console.error(error);
@@ -854,11 +1541,11 @@
         }
       }
     } else {
-      const fallbackName = 'document.md';
-      currentFileName = fallbackName;
+      const fallbackName = doc.name || 'document.md';
       downloadFile(fallbackName);
       showToast('Downloaded');
-      saveAutosave();
+      saveDocumentsToStorage();
+      renderDraftList();
     }
   }
 
@@ -878,19 +1565,6 @@
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-  }
-
-  function loadDocument(content, name, handle) {
-    editor.value = content;
-    clearCommandHistory();
-    if (handle !== undefined) {
-      currentFileHandle = handle;
-    } else if (!supportsFileSystemAccess) {
-      currentFileHandle = null;
-    }
-    currentFileName = name || currentFileName;
-    updatePreview();
-    saveAutosave();
   }
 
   async function copyMarkdown() {

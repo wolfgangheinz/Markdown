@@ -11,6 +11,9 @@
   <header class="app-header">
     <div class="logo-title">
       <h1>Markdown Studio</h1>
+      <label class="sr-only" for="document-title">Document title</label>
+      <input type="text" id="document-title" class="document-title-input" value="Untitled" maxlength="120" aria-describedby="document-title-help">
+      <span id="document-title-help" class="sr-only">Press Enter or leave the field to save the new name.</span>
     </div>
     <div class="header-groups">
       <div class="pane-toolbar editor-toolbar" role="toolbar" aria-label="Editor formatting toolbar">
@@ -40,6 +43,7 @@
         <button type="button" class="file-btn" data-action="copyMd" title="Copy Markdown" aria-label="Copy Markdown">Copy MD</button>
         <button type="button" class="file-btn" data-action="copyRich" title="Copy Rendered HTML" aria-label="Copy rendered HTML">Copy Rich</button>
         <button type="button" class="file-btn" data-action="clearAutosave" title="Clear Autosave" aria-label="Clear autosaved draft">Clear Draft</button>
+        <button type="button" class="file-btn" data-action="manageDrafts" title="Manage drafts" aria-label="Manage autosaved drafts">Drafts</button>
       </div>
       <button type="button" class="theme-toggle" aria-label="Toggle light or dark theme" aria-pressed="false">
         <span class="icon sun" aria-hidden="true">☀</span>
@@ -61,11 +65,31 @@
     </section>
   </main>
   <div class="toast" role="status" aria-live="polite" hidden></div>
-  <input type="file" id="file-input" accept=".md,.markdown,.txt" hidden>
+  <input type="file" id="file-input" accept=".md,.markdown,.txt,.html,.htm" hidden>
+  <div class="draft-manager" hidden>
+    <div class="draft-manager__backdrop" data-action="closeDrafts"></div>
+    <div class="draft-manager__dialog" role="dialog" aria-modal="true" aria-labelledby="draft-manager-title">
+      <div class="draft-manager__header">
+        <h2 id="draft-manager-title">Autosaved Drafts</h2>
+        <button type="button" class="file-btn" data-action="closeDrafts" aria-label="Close draft manager">Close</button>
+      </div>
+      <div class="draft-manager__content">
+        <div class="draft-manager__empty" hidden>No drafts yet.</div>
+        <ul class="draft-manager__list" role="list"></ul>
+      </div>
+      <div class="draft-manager__footer">
+        <div class="storage-indicator" aria-live="polite">
+          <div class="storage-bar" aria-hidden="true"><span></span></div>
+          <div class="storage-label">Storage usage: 0%</div>
+        </div>
+      </div>
+    </div>
+  </div>
   
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/lib/common.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/turndown@7.1.2/dist/turndown.min.js" defer></script>
   <script src="app.js" defer></script>
 </body>
 </html>
