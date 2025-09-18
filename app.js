@@ -291,26 +291,50 @@
   }
 
   function handlePaste(event) {
-    if (!event || !event.clipboardData || !turndownService) {
+    if (!event || !event.clipboardData) {
       return;
     }
     const html = event.clipboardData.getData('text/html');
-    if (!html) {
+    const plainRaw = event.clipboardData.getData('text/plain');
+    if (!html && !plainRaw) {
       return;
     }
-    const plain = event.clipboardData.getData('text/plain');
+
+    const normalize = (value) => (value || '')
+      .replace(/\u00a0/g, ' ')
+      .replace(/\r\n?/g, '\n');
+
+    const plain = normalize(plainRaw);
     let markdown = '';
-    try {
-      markdown = turndownService.turndown(html);
-    } catch (error) {
-      console.warn('Rich text paste conversion failed', error);
+    let usedRichConversion = false;
+
+    const containsCodeLikeMarkup = /<pre|<code|white-space\s*:\s*pre/i.test(html || '');
+
+    if (turndownService && html && !containsCodeLikeMarkup) {
+      try {
+        markdown = normalize(turndownService.turndown(html));
+        usedRichConversion = true;
+      } catch (error) {
+        console.warn('Rich text paste conversion failed', error);
+        markdown = '';
+        usedRichConversion = false;
+      }
     }
+
+    const hasIndent = (value) => /(^|\n)[ \t]+/.test(value || '');
+
     if (!markdown) {
       markdown = plain;
+      usedRichConversion = false;
+    } else if (plain && hasIndent(plain) && (!hasIndent(markdown) || containsCodeLikeMarkup)) {
+      markdown = plain;
+      usedRichConversion = false;
     }
+
     if (!markdown) {
       return;
     }
+
     event.preventDefault();
     const start = editor.selectionStart;
     const end = editor.selectionEnd;
@@ -318,7 +342,7 @@
     replaceRange(start, end, markdown);
     const cursor = start + markdown.length;
     editor.setSelectionRange(cursor, cursor);
-    showToast(markdown !== plain ? 'Converted rich text to Markdown' : 'Pasted as plain text—review formatting');
+    showToast(usedRichConversion ? 'Converted rich text to Markdown' : 'Pasted with original spacing');
   }
 
   function bindToolbar() {
