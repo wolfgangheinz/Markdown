@@ -2,7 +2,7 @@
   const editor = document.getElementById('editor');
   const preview = document.getElementById('preview');
   const divider = document.querySelector('.divider');
-  const toolbar = document.querySelector('.editor-toolbar');
+  const toolbars = document.querySelectorAll('.editor-toolbar, .workflow-toolbar');
   const fileActions = document.querySelector('.file-toolbar');
   const toast = document.querySelector('.toast');
   const fileInput = document.getElementById('file-input');
@@ -56,6 +56,7 @@
   let startX = 0;
   let startWidth = 0;
   const commandUndoStack = [];
+  const commandRedoStack = [];
   const COMMAND_UNDO_LIMIT = 100;
   let isRestoring = false;
   let documents = {};
@@ -247,10 +248,32 @@
       }
       const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
       const modKey = isMac ? event.metaKey : event.ctrlKey;
+      if (!modKey) {
+        if (event.key === 'Tab') {
+          handleTabKey(event);
+          return;
+        }
+        if (event.key === 'Enter') {
+          if (handleListEnter(event)) {
+            return;
+          }
+        }
+      }
       if (modKey) {
         switch (event.key.toLowerCase()) {
           case 'z':
-            if (!event.shiftKey && performCommandUndo()) {
+            if (event.shiftKey) {
+              if (performCommandRedo()) {
+                event.preventDefault();
+                return;
+              }
+            } else if (performCommandUndo()) {
+              event.preventDefault();
+              return;
+            }
+            break;
+          case 'y':
+            if (performCommandRedo()) {
               event.preventDefault();
               return;
             }
@@ -285,6 +308,16 @@
             return;
         }
       }
+    });
+
+    editor.addEventListener('beforeinput', (event) => {
+      if (event.defaultPrevented || isRestoring) {
+        return;
+      }
+      if (event.inputType === 'historyUndo' || event.inputType === 'historyRedo') {
+        return;
+      }
+      pushUndoState(captureEditorState());
     });
 
     editor.addEventListener('paste', handlePaste);
@@ -346,17 +379,19 @@
   }
 
   function bindToolbar() {
-    if (!toolbar) {
+    if (!toolbars || toolbars.length === 0) {
       return;
     }
-    toolbar.addEventListener('click', (event) => {
-      const button = event.target.closest('button[data-action]');
-      if (!button) {
-        return;
-      }
-      const action = button.dataset.action;
-      applyFormatting(action);
-      editor.focus();
+    toolbars.forEach((bar) => {
+      bar.addEventListener('click', (event) => {
+        const button = event.target.closest('button[data-action]');
+        if (!button) {
+          return;
+        }
+        const action = button.dataset.action;
+        applyFormatting(action);
+        editor.focus();
+      });
     });
   }
 
@@ -560,6 +595,7 @@
     const html = marked.parse(text);
     const clean = DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
     preview.innerHTML = clean;
+    transformMermaidCodeBlocks();
     promoteMultilineCode();
     if (window.hljs && typeof window.hljs.highlightElement === 'function') {
       preview.querySelectorAll('pre code').forEach((block) => {
@@ -606,6 +642,39 @@
     }
   }
 
+  function transformMermaidCodeBlocks() {
+    const blocks = Array.from(preview.querySelectorAll('pre code.language-mermaid'));
+    if (blocks.length === 0) {
+      return;
+    }
+    blocks.forEach((code) => {
+      const pre = code.parentElement;
+      const container = document.createElement('div');
+      container.className = 'mermaid';
+      container.textContent = code.textContent || '';
+      pre.replaceWith(container);
+    });
+    renderMermaidDiagrams();
+  }
+
+  function renderMermaidDiagrams() {
+    if (!window.mermaid || typeof window.mermaid.run !== 'function') {
+      console.warn('Mermaid library not loaded; skipping diagram render');
+      return;
+    }
+    const theme = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+    try {
+      window.mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: 'loose',
+        theme
+      });
+      window.mermaid.run({ nodes: preview.querySelectorAll('.mermaid') });
+    } catch (error) {
+      console.warn('Mermaid rendering failed', error);
+    }
+  }
+
   function applyFormatting(action) {
     const start = editor.selectionStart;
     const end = editor.selectionEnd;
@@ -616,6 +685,9 @@
     switch (action) {
       case 'undo':
         triggerUndo(start, end);
+        return;
+      case 'redo':
+        triggerRedo(start, end);
         return;
       case 'bold':
         wrapSelection('**', '**', 'bold text');
@@ -671,6 +743,73 @@
     editor.setSelectionRange(selectionStart, selectionEnd);
   }
 
+  function captureEditorState() {
+    return {
+      value: editor.value,
+      selectionStart: editor.selectionStart,
+      selectionEnd: editor.selectionEnd,
+      scrollTop: editor.scrollTop
+    };
+  }
+
+  function restoreEditorState(state) {
+    if (!state) {
+      return;
+    }
+    isRestoring = true;
+    editor.value = typeof state.value === 'string' ? state.value : editor.value;
+    editor.scrollTop = typeof state.scrollTop === 'number' ? state.scrollTop : editor.scrollTop;
+    const valueLength = editor.value.length;
+    const clamp = (pos, fallback) => {
+      if (typeof pos !== 'number' || Number.isNaN(pos)) {
+        return fallback;
+      }
+      return Math.min(Math.max(0, pos), valueLength);
+    };
+    const start = clamp(state.selectionStart, valueLength);
+    const end = clamp(state.selectionEnd, start);
+    editor.setSelectionRange(start, end);
+    isRestoring = false;
+    dispatchInputEvent();
+  }
+
+  function trimHistory(stack) {
+    while (stack.length > COMMAND_UNDO_LIMIT) {
+      stack.shift();
+    }
+  }
+
+  function clearRedoHistory() {
+    commandRedoStack.length = 0;
+  }
+
+  function pushUndoState(state, options = {}) {
+    if (!state) {
+      return;
+    }
+    const last = commandUndoStack[commandUndoStack.length - 1];
+    if (last && last.value === state.value && last.selectionStart === state.selectionStart && last.selectionEnd === state.selectionEnd) {
+      return;
+    }
+    commandUndoStack.push(state);
+    if (!options.preserveRedo) {
+      clearRedoHistory();
+    }
+    trimHistory(commandUndoStack);
+  }
+
+  function pushRedoState(state) {
+    if (!state) {
+      return;
+    }
+    const last = commandRedoStack[commandRedoStack.length - 1];
+    if (last && last.value === state.value && last.selectionStart === state.selectionStart && last.selectionEnd === state.selectionEnd) {
+      return;
+    }
+    commandRedoStack.push(state);
+    trimHistory(commandRedoStack);
+  }
+
   function triggerUndo(selectionStart, selectionEnd) {
     ensureEditorFocus(selectionStart, selectionEnd);
     if (performCommandUndo()) {
@@ -690,17 +829,42 @@
     });
   }
 
+  function triggerRedo(selectionStart, selectionEnd) {
+    ensureEditorFocus(selectionStart, selectionEnd);
+    if (performCommandRedo()) {
+      return;
+    }
+    let redone = false;
+    if (typeof document.queryCommandSupported === 'function' && document.queryCommandSupported('redo')) {
+      redone = document.execCommand('redo');
+    } else if (typeof document.execCommand === 'function') {
+      redone = document.execCommand('redo');
+    }
+    if (!redone) {
+      console.warn('Redo command not supported');
+    }
+    window.requestAnimationFrame(() => {
+      updatePreview();
+    });
+  }
+
   function performCommandUndo() {
     if (commandUndoStack.length === 0) {
       return false;
     }
-    const state = commandUndoStack.pop();
-    isRestoring = true;
-    editor.value = state.value;
-    editor.scrollTop = state.scrollTop;
-    editor.setSelectionRange(state.selectionStart, state.selectionEnd);
-    isRestoring = false;
-    dispatchInputEvent();
+    const previous = commandUndoStack.pop();
+    pushRedoState(captureEditorState());
+    restoreEditorState(previous);
+    return true;
+  }
+
+  function performCommandRedo() {
+    if (commandRedoStack.length === 0) {
+      return false;
+    }
+    const next = commandRedoStack.pop();
+    pushUndoState(captureEditorState(), { preserveRedo: true });
+    restoreEditorState(next);
     return true;
   }
 
@@ -833,12 +997,7 @@
     const currentSlice = previousValue.slice(start, end);
     const shouldRecord = !isRestoring && currentSlice !== text;
     if (shouldRecord) {
-      pushUndoState({
-        value: previousValue,
-        selectionStart: start,
-        selectionEnd: end,
-        scrollTop: editor.scrollTop
-      });
+      pushUndoState(captureEditorState());
     }
 
     if (typeof editor.setRangeText === 'function') {
@@ -851,13 +1010,6 @@
     }
   }
 
-  function pushUndoState(state) {
-    commandUndoStack.push(state);
-    if (commandUndoStack.length > COMMAND_UNDO_LIMIT) {
-      commandUndoStack.shift();
-    }
-  }
-
   function dispatchInputEvent() {
     const event = typeof window.InputEvent === 'function'
       ? new window.InputEvent('input', { bubbles: true })
@@ -867,6 +1019,7 @@
 
   function clearCommandHistory() {
     commandUndoStack.length = 0;
+    clearRedoHistory();
   }
 
   function getCurrentLine(value, position) {
@@ -907,6 +1060,94 @@
       end: lineEnd,
       lines: slice.split('\n')
     };
+  }
+
+  function parseListLine(line) {
+    const match = /^(\s*)([*+-]|\d+\.)(\s+\[(?: |x|X)\])?\s*(.*)$/.exec(line || '');
+    if (!match) {
+      return null;
+    }
+    return {
+      indent: match[1] || '',
+      marker: match[2],
+      checkbox: match[3] ? match[3].trim() : '',
+      content: match[4] || ''
+    };
+  }
+
+  function handleTabKey(event) {
+    const selectionInfo = getSelectedLines();
+    const originalStart = editor.selectionStart;
+    const originalEnd = editor.selectionEnd;
+    event.preventDefault();
+    if (event.shiftKey) {
+      outdentSelection(selectionInfo, originalStart, originalEnd);
+    } else {
+      indentSelection(selectionInfo, originalStart, originalEnd);
+    }
+  }
+
+  function indentSelection(selectionInfo, originalStart, originalEnd, indent = '  ') {
+    const { start, end, lines } = selectionInfo;
+    const indented = lines.map((line) => `${indent}${line}`);
+    replaceRange(start, end, indented.join('\n'));
+    const lineCount = lines.length;
+    const newStart = originalStart + indent.length;
+    const newEnd = originalEnd + indent.length * lineCount;
+    editor.setSelectionRange(newStart, newEnd);
+  }
+
+  function outdentSelection(selectionInfo, originalStart, originalEnd, size = 2) {
+    const { start, end, lines } = selectionInfo;
+    const outdented = [];
+    const removedCounts = [];
+    lines.forEach((line) => {
+      let removed = 0;
+      if (/^\t/.test(line)) {
+        removed = size;
+        outdented.push(line.replace(/^\t/, ''));
+      } else {
+        const match = line.match(/^ {1,}/);
+        removed = match ? Math.min(size, match[0].length) : 0;
+        outdented.push(line.slice(removed));
+      }
+      removedCounts.push(removed);
+    });
+    replaceRange(start, end, outdented.join('\n'));
+    const totalRemoved = removedCounts.reduce((sum, value) => sum + value, 0);
+    const newStart = Math.max(start, originalStart - (removedCounts[0] || 0));
+    const newEnd = Math.max(newStart, originalEnd - totalRemoved);
+    editor.setSelectionRange(newStart, newEnd);
+  }
+
+  function handleListEnter(event) {
+    if (event.shiftKey || event.metaKey || event.ctrlKey) {
+      return false;
+    }
+    if (editor.selectionStart !== editor.selectionEnd) {
+      return false;
+    }
+    const cursor = editor.selectionStart;
+    const value = editor.value;
+    const line = getCurrentLine(value, cursor);
+    const parsed = parseListLine(line.lineText);
+    if (!parsed) {
+      return false;
+    }
+    event.preventDefault();
+    const prefix = `${parsed.indent}${parsed.marker} ${parsed.checkbox ? `${parsed.checkbox} ` : ''}`;
+    const remaining = line.lineText.slice(prefix.length).trim();
+    if (!remaining) {
+      replaceRange(line.lineStart, line.lineEnd, '');
+      const nextPos = line.lineStart;
+      editor.setSelectionRange(nextPos, nextPos);
+      return true;
+    }
+    const insertion = `\n${prefix}`;
+    replaceRange(cursor, cursor, insertion);
+    const nextCursor = cursor + insertion.length;
+    editor.setSelectionRange(nextCursor, nextCursor);
+    return true;
   }
 
   function getCurrentDocument() {
@@ -1707,6 +1948,7 @@
     localStorage.setItem(THEME_KEY, next);
     syncThemeToggle(next);
     showToast(`Switched to ${next} theme`);
+    updatePreview();
   }
 
   function showToast(message) {
