@@ -1,7 +1,7 @@
 # Product Requirements Document (PRD): Offline Markdown Editor
 
 ## 1. Goal
-Provide a **self-contained, offline Markdown editor** (HTML + JS + CSS, no backend) that works in restricted corporate environments (e.g., Edge browser), supporting split edit/preview, GitHub-style Markdown, file operations, and basic export.
+Provide a **self-contained, offline Markdown editor** (HTML + JS + CSS, no backend) that works in restricted corporate environments (e.g., Edge browser), supporting split edit/preview, GitHub-style Markdown, file operations, and basic export. The purpose is to give users a local alternative so they don’t have to paste sensitive Markdown into third-party web tools; all editing and preview happen in the browser.
 
 ---
 
@@ -34,9 +34,12 @@ Provide a **self-contained, offline Markdown editor** (HTML + JS + CSS, no backe
   - Link: `Ctrl/Cmd+K`
   - Save: `Ctrl/Cmd+S`
   - Open: `Ctrl/Cmd+O`
+- **Undo/Redo**: History stack (100 states) with `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z` or `Ctrl/Cmd+Y`, plus toolbar buttons.
+- **List Ergonomics**: `Tab` / `Shift+Tab` indents or outdents list levels and selected lines; `Enter` continues the current list item or exits the list on an empty bullet.
 - **Toolbar**: Buttons for common Markdown constructs plus undo, highlight, insert image, table, and task list helpers.
 - **Theme Toggle**: Light/Dark themes, instant switch, persisted in `localStorage`.
 - **Syntax Highlighting**: Applies highlight.js styling to code blocks when the library is available.
+- **Mermaid Diagrams**: Fenced code blocks tagged `mermaid` render as diagrams when Mermaid is available; fall back to code blocks if the library is missing.
 
 ### File Handling
 - **Open / Save / Save As**:
@@ -47,7 +50,7 @@ Provide a **self-contained, offline Markdown editor** (HTML + JS + CSS, no backe
   - All open files autosaved in `localStorage` using UUID + display name.
   - Multiple files supported.
   - Debounced save (default 3s).
-  - Storage usage shown via progress bar above 75%.
+  - Storage usage shown via progress bar above 75%, with warnings at ~75% and ~90% of the 5 MB quota.
   - Quota warnings prompt user to delete drafts.
   - Drafts can be renamed inline and deleted via file manager.
   - Optionally auto-expire old drafts.
@@ -91,6 +94,8 @@ Provide a **self-contained, offline Markdown editor** (HTML + JS + CSS, no backe
 - **Security**:
   - Escape HTML to prevent injection.
   - Links open with `rel="noreferrer noopener"`.
+  - Sanitize rendered HTML with DOMPurify.
+  - Runtime libraries (marked, DOMPurify, highlight.js, Mermaid, Turndown) are fetched client-side; they process text locally and do not transmit content externally.
 - **Accessibility**:
   - Divider keyboard-resizable with arrow keys.
   - Preview is screen-reader accessible (`aria-live="polite"`).
@@ -100,7 +105,7 @@ Provide a **self-contained, offline Markdown editor** (HTML + JS + CSS, no backe
 
 ## 5. Out of Scope (v1)
 - Real-time collaboration.
-- Plugins/extensions (Mermaid, KaTeX).
+- Math rendering plugins (KaTeX/MathJax).
 - Full GitHub Flavored Markdown spec (e.g., footnotes, emoji shortcodes, table alignment).
 - OneDrive/SharePoint API integration (manual file handling only).
 - Localization (English-only UI).
@@ -108,9 +113,9 @@ Provide a **self-contained, offline Markdown editor** (HTML + JS + CSS, no backe
 ---
 
 ## 6. Open Questions
-1. Should we bundle **syntax highlighting** for code blocks (highlight.js)?
+1. When do we bundle third-party libraries locally (marked, DOMPurify, highlight.js + theme CSS, Mermaid, Turndown) to meet the offline mandate?
 2. Should the app remember **cursor/scroll positions** across sessions?
 
 
 ## 7. Gaps to be closed
-- **Offline dependencies**: `index.html` still loads `marked`, `DOMPurify`, `highlight.js`, and `Turndown` from public CDNs, breaking the offline-only requirement.
+- **Offline dependencies**: `index.html` still loads `marked`, `DOMPurify`, `highlight.js` (and its CSS), `Mermaid`, and `Turndown` from public CDNs, breaking the offline-only requirement. Bundle these assets locally with integrity checks and update the HTML to reference local files; current CDN loads are download-only and do not post document content.

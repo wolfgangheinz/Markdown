@@ -1,7 +1,7 @@
 Offline Markdown Studio
 =======================
 
-A self-contained, browser-based Markdown editor designed for restricted environments. It bundles editing, live preview, autosave, export, and file handling into a single HTML file that runs entirely offline—no build step or backend required.
+A self-contained, browser-based Markdown editor designed for restricted environments. It bundles editing, live preview, autosave, export, and file handling into a single HTML file that runs entirely offline—no build step or backend required. The goal is to let you edit Markdown locally without pasting sensitive text into third-party web apps.
 
 Features
 --------
@@ -12,6 +12,7 @@ Features
 - Syntax-highlighted code blocks powered by Highlight.js.
 - Copy rendered HTML, export standalone HTML, or print to PDF.
 - Light/dark themes and toast notifications for key actions.
+- Libraries such as Marked, DOMPurify, Highlight.js, Mermaid, and Turndown are currently fetched from CDNs but run fully in your browser; no document contents are sent to external services.
 
 Getting Started
 ---------------
