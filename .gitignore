@@ -1,3 +1,16 @@
+# Local changelog/to do list
 TODO.md
+
+# OS / editor noise
 .DS_Store
-.vscode/settings.json
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs / temp
+*.log
+*.tmp
+
+# Dependency caches (future-proofing if you add tooling)
+node_modules/
+dist/
