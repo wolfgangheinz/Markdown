@@ -56,6 +56,7 @@
   let startX = 0;
   let startWidth = 0;
   const commandUndoStack = [];
+  const commandRedoStack = [];
   const COMMAND_UNDO_LIMIT = 100;
   let isRestoring = false;
   let documents = {};
@@ -250,7 +251,18 @@
       if (modKey) {
         switch (event.key.toLowerCase()) {
           case 'z':
-            if (!event.shiftKey && performCommandUndo()) {
+            if (event.shiftKey) {
+              if (performCommandRedo()) {
+                event.preventDefault();
+                return;
+              }
+            } else if (performCommandUndo()) {
+              event.preventDefault();
+              return;
+            }
+            break;
+          case 'y':
+            if (performCommandRedo()) {
               event.preventDefault();
               return;
             }
@@ -285,6 +297,16 @@
             return;
         }
       }
+    });
+
+    editor.addEventListener('beforeinput', (event) => {
+      if (event.defaultPrevented || isRestoring) {
+        return;
+      }
+      if (event.inputType === 'historyUndo' || event.inputType === 'historyRedo') {
+        return;
+      }
+      pushUndoState(captureEditorState());
     });
 
     editor.addEventListener('paste', handlePaste);
@@ -617,6 +639,9 @@
       case 'undo':
         triggerUndo(start, end);
         return;
+      case 'redo':
+        triggerRedo(start, end);
+        return;
       case 'bold':
         wrapSelection('**', '**', 'bold text');
         break;
@@ -671,6 +696,73 @@
     editor.setSelectionRange(selectionStart, selectionEnd);
   }
 
+  function captureEditorState() {
+    return {
+      value: editor.value,
+      selectionStart: editor.selectionStart,
+      selectionEnd: editor.selectionEnd,
+      scrollTop: editor.scrollTop
+    };
+  }
+
+  function restoreEditorState(state) {
+    if (!state) {
+      return;
+    }
+    isRestoring = true;
+    editor.value = typeof state.value === 'string' ? state.value : editor.value;
+    editor.scrollTop = typeof state.scrollTop === 'number' ? state.scrollTop : editor.scrollTop;
+    const valueLength = editor.value.length;
+    const clamp = (pos, fallback) => {
+      if (typeof pos !== 'number' || Number.isNaN(pos)) {
+        return fallback;
+      }
+      return Math.min(Math.max(0, pos), valueLength);
+    };
+    const start = clamp(state.selectionStart, valueLength);
+    const end = clamp(state.selectionEnd, start);
+    editor.setSelectionRange(start, end);
+    isRestoring = false;
+    dispatchInputEvent();
+  }
+
+  function trimHistory(stack) {
+    while (stack.length > COMMAND_UNDO_LIMIT) {
+      stack.shift();
+    }
+  }
+
+  function clearRedoHistory() {
+    commandRedoStack.length = 0;
+  }
+
+  function pushUndoState(state, options = {}) {
+    if (!state) {
+      return;
+    }
+    const last = commandUndoStack[commandUndoStack.length - 1];
+    if (last && last.value === state.value && last.selectionStart === state.selectionStart && last.selectionEnd === state.selectionEnd) {
+      return;
+    }
+    commandUndoStack.push(state);
+    if (!options.preserveRedo) {
+      clearRedoHistory();
+    }
+    trimHistory(commandUndoStack);
+  }
+
+  function pushRedoState(state) {
+    if (!state) {
+      return;
+    }
+    const last = commandRedoStack[commandRedoStack.length - 1];
+    if (last && last.value === state.value && last.selectionStart === state.selectionStart && last.selectionEnd === state.selectionEnd) {
+      return;
+    }
+    commandRedoStack.push(state);
+    trimHistory(commandRedoStack);
+  }
+
   function triggerUndo(selectionStart, selectionEnd) {
     ensureEditorFocus(selectionStart, selectionEnd);
     if (performCommandUndo()) {
@@ -690,17 +782,42 @@
     });
   }
 
+  function triggerRedo(selectionStart, selectionEnd) {
+    ensureEditorFocus(selectionStart, selectionEnd);
+    if (performCommandRedo()) {
+      return;
+    }
+    let redone = false;
+    if (typeof document.queryCommandSupported === 'function' && document.queryCommandSupported('redo')) {
+      redone = document.execCommand('redo');
+    } else if (typeof document.execCommand === 'function') {
+      redone = document.execCommand('redo');
+    }
+    if (!redone) {
+      console.warn('Redo command not supported');
+    }
+    window.requestAnimationFrame(() => {
+      updatePreview();
+    });
+  }
+
   function performCommandUndo() {
     if (commandUndoStack.length === 0) {
       return false;
     }
-    const state = commandUndoStack.pop();
-    isRestoring = true;
-    editor.value = state.value;
-    editor.scrollTop = state.scrollTop;
-    editor.setSelectionRange(state.selectionStart, state.selectionEnd);
-    isRestoring = false;
-    dispatchInputEvent();
+    const previous = commandUndoStack.pop();
+    pushRedoState(captureEditorState());
+    restoreEditorState(previous);
+    return true;
+  }
+
+  function performCommandRedo() {
+    if (commandRedoStack.length === 0) {
+      return false;
+    }
+    const next = commandRedoStack.pop();
+    pushUndoState(captureEditorState(), { preserveRedo: true });
+    restoreEditorState(next);
     return true;
   }
 
@@ -833,12 +950,7 @@
     const currentSlice = previousValue.slice(start, end);
     const shouldRecord = !isRestoring && currentSlice !== text;
     if (shouldRecord) {
-      pushUndoState({
-        value: previousValue,
-        selectionStart: start,
-        selectionEnd: end,
-        scrollTop: editor.scrollTop
-      });
+      pushUndoState(captureEditorState());
     }
 
     if (typeof editor.setRangeText === 'function') {
@@ -851,13 +963,6 @@
     }
   }
 
-  function pushUndoState(state) {
-    commandUndoStack.push(state);
-    if (commandUndoStack.length > COMMAND_UNDO_LIMIT) {
-      commandUndoStack.shift();
-    }
-  }
-
   function dispatchInputEvent() {
     const event = typeof window.InputEvent === 'function'
       ? new window.InputEvent('input', { bubbles: true })
@@ -867,6 +972,7 @@
 
   function clearCommandHistory() {
     commandUndoStack.length = 0;
+    clearRedoHistory();
   }
 
   function getCurrentLine(value, position) {
