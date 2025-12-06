@@ -344,6 +344,14 @@ body {
   margin: 1rem 0;
 }
 
+.markdown-body .mermaid {
+  width: 100%;
+}
+
+.markdown-body .mermaid svg {
+  max-width: 100%;
+}
+
 .markdown-body th,
 .markdown-body td {
   border: 1px solid var(--border);
