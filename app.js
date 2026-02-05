@@ -55,6 +55,7 @@
   let isResizing = false;
   let startX = 0;
   let startWidth = 0;
+  let isSyncingScroll = false;
   const commandUndoStack = [];
   const commandRedoStack = [];
   const COMMAND_UNDO_LIMIT = 100;
@@ -95,6 +96,7 @@
   editor.focus();
 
   bindEditor();
+  bindScrollSync();
   bindToolbar();
   bindFileActions();
   bindDivider();
@@ -321,6 +323,45 @@
     });
 
     editor.addEventListener('paste', handlePaste);
+  }
+
+  function bindScrollSync() {
+    editor.addEventListener('scroll', () => syncScrollPosition(editor, previewPane), { passive: true });
+    previewPane.addEventListener('scroll', () => syncScrollPosition(previewPane, editor), { passive: true });
+  }
+
+  function getScrollMetrics(element) {
+    return {
+      scrollTop: element.scrollTop,
+      scrollHeight: element.scrollHeight,
+      clientHeight: element.clientHeight
+    };
+  }
+
+  function getScrollRatio({ scrollTop, scrollHeight, clientHeight }) {
+    if (!scrollHeight) {
+      return 0;
+    }
+    const ratio = (scrollTop + clientHeight / 2) / scrollHeight;
+    return Math.min(Math.max(ratio, 0), 1);
+  }
+
+  function syncScrollPosition(source, target) {
+    if (isSyncingScroll) {
+      return;
+    }
+    isSyncingScroll = true;
+    const sourceMetrics = getScrollMetrics(source);
+    const targetMetrics = getScrollMetrics(target);
+    const ratio = getScrollRatio(sourceMetrics);
+    const maxTargetScroll = Math.max(0, targetMetrics.scrollHeight - targetMetrics.clientHeight);
+    const targetScrollTop = Math.min(Math.max(ratio * targetMetrics.scrollHeight - targetMetrics.clientHeight / 2, 0), maxTargetScroll);
+    if (Math.abs(target.scrollTop - targetScrollTop) > 1) {
+      target.scrollTop = targetScrollTop;
+    }
+    requestAnimationFrame(() => {
+      isSyncingScroll = false;
+    });
   }
 
   function handlePaste(event) {
@@ -604,6 +645,7 @@
       });
     }
     enforceSafeLinks();
+    syncScrollPosition(editor, previewPane);
   }
 
   function promoteMultilineCode() {
