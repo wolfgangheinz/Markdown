@@ -37,6 +37,7 @@
         <button type="button" class="file-btn" data-action="redo" title="Redo (Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y)" aria-label="Redo">Redo</button>
         <button type="button" class="file-btn" data-action="new" title="New document" aria-label="New document">New</button>
         <button type="button" class="file-btn" data-action="open" title="Open" aria-label="Open file">Open</button>
+        <button type="button" class="file-btn" data-action="openFolder" title="Open folder" aria-label="Open folder">Open Folder</button>
         <button type="button" class="file-btn" data-action="save" title="Save" aria-label="Save file">Save</button>
         <button type="button" class="file-btn" data-action="saveAs" title="Save As" aria-label="Save file as">Save As</button>
         <button type="button" class="file-btn" data-action="exportHtml" title="Export HTML" aria-label="Export as HTML">Export HTML</button>
@@ -57,6 +58,21 @@
     </div>
   </header>
   <main class="app-main" id="drop-zone">
+    <aside class="file-explorer" aria-label="Folder explorer">
+      <div class="file-explorer__header">
+        <span>Explorer</span>
+        <strong class="file-explorer__name">No folder open</strong>
+        <button type="button" class="file-explorer__toggle" data-action="toggleExplorer" title="Hide Explorer" aria-label="Hide Explorer" aria-pressed="true">‹</button>
+      </div>
+      <span class="file-explorer__rail-label" aria-hidden="true">Explorer</span>
+      <div class="file-explorer__tree"></div>
+      <div class="file-explorer__empty">
+        <p class="file-explorer__empty-message">Open a folder to browse Markdown files.</p>
+        <button type="button" class="file-btn file-explorer__open-folder">Open Folder</button>
+        <button type="button" class="file-btn file-explorer__reconnect" hidden>Reconnect</button>
+      </div>
+    </aside>
+    <div class="explorer-divider" role="separator" aria-orientation="vertical" aria-label="Resize Explorer" aria-valuemin="140" aria-valuemax="480" aria-valuenow="240" tabindex="0"></div>
     <section class="pane editor-pane" aria-label="Markdown editor">
       <textarea id="editor" spellcheck="false" aria-label="Markdown editor"></textarea>
     </section>
@@ -67,6 +83,7 @@
   </main>
   <div class="toast" role="status" aria-live="polite" hidden></div>
   <input type="file" id="file-input" accept=".md,.markdown,.txt,.html,.htm" hidden>
+  <input type="file" id="folder-input" webkitdirectory multiple hidden>
   <div class="draft-manager" hidden>
     <div class="draft-manager__backdrop" data-action="closeDrafts"></div>
     <div class="draft-manager__dialog" role="dialog" aria-modal="true" aria-labelledby="draft-manager-title">
