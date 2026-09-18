@@ -2,10 +2,20 @@
   const editor = document.getElementById('editor');
   const preview = document.getElementById('preview');
   const divider = document.querySelector('.divider');
+  const explorerDivider = document.querySelector('.explorer-divider');
   const toolbars = document.querySelectorAll('.editor-toolbar, .workflow-toolbar');
   const fileActions = document.querySelector('.file-toolbar');
   const toast = document.querySelector('.toast');
   const fileInput = document.getElementById('file-input');
+  const folderInput = document.getElementById('folder-input');
+  const explorer = document.querySelector('.file-explorer');
+  const explorerName = document.querySelector('.file-explorer__name');
+  const explorerTree = document.querySelector('.file-explorer__tree');
+  const explorerEmpty = document.querySelector('.file-explorer__empty');
+  const explorerEmptyMessage = document.querySelector('.file-explorer__empty-message');
+  const explorerReconnect = document.querySelector('.file-explorer__reconnect');
+  const explorerOpenFolder = document.querySelector('.file-explorer__open-folder');
+  const explorerToggles = document.querySelectorAll('[data-action="toggleExplorer"]');
   const main = document.querySelector('.app-main');
   const responsiveToggle = document.querySelectorAll('.responsive-toggle button');
   const root = document.documentElement;
@@ -41,6 +51,11 @@
   const DOCUMENTS_KEY = 'markdown-studio-documents';
   const LEGACY_AUTOSAVE_KEY = 'markdown-studio-autosave';
   const SPLIT_KEY = 'markdown-studio-split';
+  const EXPLORER_WIDTH_KEY = 'markdown-studio-explorer-width';
+  const EXPLORER_COLLAPSED_KEY = 'markdown-studio-explorer-collapsed';
+  const FOLDER_STATE_KEY = 'markdown-studio-folder-state';
+  const FOLDER_DATABASE = 'markdown-studio-files';
+  const FOLDER_STORE = 'handles';
   const THEME_KEY = 'markdown-studio-theme';
   const VIEW_KEY = 'markdown-studio-view';
   const AUTOSAVE_DELAY = 3000;
@@ -49,13 +64,18 @@
   const EXPORT_STYLES = `body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;padding:2rem;background:#f6f8fa;color:#24292f;}[data-theme="dark"] body{background:#0d1117;color:#e6edf3;}a{color:#0969da;}code,pre{font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;border-radius:6px;}pre{padding:1rem;overflow:auto;background:#f6f8fa;color:#24292f;}[data-theme="dark"] pre{background:#161b22;color:#e6edf3;}code{background:#f6f8fa;color:#24292f;padding:0.15rem 0.4rem;}[data-theme="dark"] code{background:#161b22;color:#e6edf3;}table{border-collapse:collapse;width:100%;margin:1rem 0;}th,td{border:1px solid #d0d7de;padding:0.5rem;text-align:left;}blockquote{margin:1rem 0;padding:0.5rem 1rem;border-left:4px solid #d0d7de;color:rgba(87,96,106,0.9);}h1,h2,h3,h4,h5,h6{border-bottom:1px solid #d0d7de;padding-bottom:0.3em;margin:1.5em 0 0.8em;}img{max-width:100%;}article.markdown-body{max-width:860px;margin:0 auto;background:rgba(255,255,255,0.97);padding:2rem;border-radius:12px;box-shadow:0 10px 30px rgba(15,23,42,0.08);font-size:0.97rem;line-height:1.65;}article.markdown-body pre{margin:1.5rem 0;}[data-theme="dark"] article.markdown-body{background:#161b22;color:#e6edf3;box-shadow:0 10px 30px rgba(0,0,0,0.45);}`;
 
   const supportsFileSystemAccess = typeof window.showOpenFilePicker === 'function' && typeof window.showSaveFilePicker === 'function';
+  const supportsDirectoryAccess = typeof window.showDirectoryPicker === 'function';
   let currentFileHandle = null;
   let currentFileName = 'Untitled.md';
   let toastTimeout = 0;
   let isResizing = false;
   let startX = 0;
   let startWidth = 0;
-  let isSyncingScroll = false;
+  let isResizingExplorer = false;
+  let explorerStartX = 0;
+  let explorerStartWidth = 0;
+  let scrollSyncTarget = null;
+  let scrollSyncRelease = 0;
   const commandUndoStack = [];
   const commandRedoStack = [];
   const COMMAND_UNDO_LIMIT = 100;
@@ -66,6 +86,14 @@
   let quotaToastShown = false;
   let turndownService = null;
   const fileHandles = new Map();
+  const folderEntries = new Map();
+  const folderPathLookup = new Map();
+  const folderDocumentIds = new Map();
+  const folderPathsByDocumentId = new Map();
+  let openedFolder = null;
+  let activeFolderPath = null;
+  let rememberedDirectoryHandle = null;
+  let pendingFolderReconnectState = null;
 
   marked.setOptions({
     gfm: true,
@@ -90,13 +118,13 @@
   }
 
   restoreTheme();
+  restoreExplorer();
   restoreSplit();
   restoreView();
   restoreDocuments();
   editor.focus();
 
   bindEditor();
-  bindScrollSync();
   bindToolbar();
   bindFileActions();
   bindDivider();
@@ -106,6 +134,11 @@
   bindThemeToggle();
   bindDocumentTitle();
   bindDraftManager();
+  bindFolderExplorer();
+  bindPreviewLinks();
+  bindExplorerControls();
+  bindSynchronizedScrolling();
+  restoreFolderConnection();
 
   function restoreTheme() {
     const stored = localStorage.getItem(THEME_KEY);
@@ -122,6 +155,18 @@
         applySplitWidth(width);
       }
     }
+  }
+
+  function restoreExplorer() {
+    const storedWidth = parseInt(localStorage.getItem(EXPLORER_WIDTH_KEY), 10);
+    if (!Number.isNaN(storedWidth)) {
+      const restoredWidth = Math.min(Math.max(storedWidth, 140), 480);
+      root.style.setProperty('--explorer-width', `${restoredWidth}px`);
+      if (explorerDivider) {
+        explorerDivider.setAttribute('aria-valuenow', String(restoredWidth));
+      }
+    }
+    setExplorerCollapsed(localStorage.getItem(EXPLORER_COLLAPSED_KEY) === 'true', false);
   }
 
   function restoreView() {
@@ -156,7 +201,9 @@
                 id: doc.id,
                 name,
                 content: typeof doc.content === 'string' ? doc.content : '',
-                updatedAt: typeof doc.updatedAt === 'number' ? doc.updatedAt : Date.now()
+                updatedAt: typeof doc.updatedAt === 'number' ? doc.updatedAt : Date.now(),
+                folderId: typeof doc.folderId === 'string' ? doc.folderId : null,
+                folderPath: typeof doc.folderPath === 'string' ? normalizeFolderPath(doc.folderPath) : null
               };
             });
           }
@@ -235,6 +282,156 @@
       updateStorageIndicator(payload);
     } catch (err) {
       console.warn('Autosave failed', err);
+    }
+  }
+
+  function getFolderState() {
+    try {
+      const raw = localStorage.getItem(FOLDER_STATE_KEY);
+      const state = raw ? JSON.parse(raw) : null;
+      if (!state || typeof state.id !== 'string' || typeof state.name !== 'string') {
+        return null;
+      }
+      return {
+        id: state.id,
+        name: state.name,
+        activePath: typeof state.activePath === 'string' ? normalizeFolderPath(state.activePath) : null,
+        hasHandle: state.hasHandle === true
+      };
+    } catch (error) {
+      console.warn('Folder state restore failed', error);
+      return null;
+    }
+  }
+
+  function saveFolderState() {
+    if (!openedFolder) {
+      return;
+    }
+    localStorage.setItem(FOLDER_STATE_KEY, JSON.stringify({
+      id: openedFolder.id,
+      name: openedFolder.name,
+      activePath: activeFolderPath,
+      hasHandle: Boolean(openedFolder.handle)
+    }));
+  }
+
+  function openFolderDatabase() {
+    return new Promise((resolve, reject) => {
+      if (!window.indexedDB) {
+        reject(new Error('IndexedDB is unavailable'));
+        return;
+      }
+      const request = window.indexedDB.open(FOLDER_DATABASE, 1);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        if (!database.objectStoreNames.contains(FOLDER_STORE)) {
+          database.createObjectStore(FOLDER_STORE);
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error('Unable to open folder storage'));
+    });
+  }
+
+  async function storeDirectoryHandle(folderId, handle) {
+    const database = await openFolderDatabase();
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(FOLDER_STORE, 'readwrite');
+      transaction.objectStore(FOLDER_STORE).put({ folderId, handle }, 'current');
+      transaction.oncomplete = () => {
+        database.close();
+        resolve();
+      };
+      transaction.onerror = () => {
+        database.close();
+        reject(transaction.error || new Error('Unable to remember folder'));
+      };
+    });
+  }
+
+  async function loadDirectoryHandle() {
+    const database = await openFolderDatabase();
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(FOLDER_STORE, 'readonly');
+      const request = transaction.objectStore(FOLDER_STORE).get('current');
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error || new Error('Unable to restore folder'));
+      transaction.oncomplete = () => database.close();
+    });
+  }
+
+  async function restoreFolderConnection() {
+    const state = getFolderState();
+    if (!state) {
+      return;
+    }
+    showRememberedFolder(state.name);
+    if (!state.hasHandle) {
+      return;
+    }
+    try {
+      const saved = await loadDirectoryHandle();
+      if (!saved || saved.folderId !== state.id || !saved.handle) {
+        return;
+      }
+      rememberedDirectoryHandle = saved.handle;
+      const permission = typeof saved.handle.queryPermission === 'function'
+        ? await saved.handle.queryPermission({ mode: 'readwrite' })
+        : 'granted';
+      if (permission === 'granted') {
+        await connectDirectoryHandle(saved.handle, state, false);
+      }
+    } catch (error) {
+      console.warn('Folder connection restore failed', error);
+    }
+  }
+
+  async function reconnectFolder() {
+    const state = getFolderState();
+    if (!state || !rememberedDirectoryHandle) {
+      triggerOpenFolder({ reconnectState: state });
+      return;
+    }
+    try {
+      const permission = typeof rememberedDirectoryHandle.requestPermission === 'function'
+        ? await rememberedDirectoryHandle.requestPermission({ mode: 'readwrite' })
+        : 'granted';
+      if (permission !== 'granted') {
+        showToast('Folder access was not granted');
+        return;
+      }
+      await connectDirectoryHandle(rememberedDirectoryHandle, state, true);
+    } catch (error) {
+      console.error(error);
+      showToast('Unable to reconnect folder');
+    }
+  }
+
+  async function connectDirectoryHandle(handle, state, notify) {
+    const rootNode = await readDirectoryTree(handle, '');
+    await activateFolder(rootNode, handle.name || state.name, handle, {
+      id: state.id,
+      initialPath: state.activePath,
+      notify
+    });
+  }
+
+  function showRememberedFolder(name) {
+    if (!explorerEmpty) {
+      return;
+    }
+    explorerName.textContent = name;
+    explorerName.title = name;
+    explorerEmpty.hidden = false;
+    if (explorerEmptyMessage) {
+      explorerEmptyMessage.textContent = `Reconnect to ${name} to restore the file tree.`;
+    }
+    if (explorerReconnect) {
+      explorerReconnect.hidden = false;
+    }
+    if (explorerOpenFolder) {
+      explorerOpenFolder.hidden = true;
     }
   }
 
@@ -323,45 +520,6 @@
     });
 
     editor.addEventListener('paste', handlePaste);
-  }
-
-  function bindScrollSync() {
-    editor.addEventListener('scroll', () => syncScrollPosition(editor, previewPane), { passive: true });
-    previewPane.addEventListener('scroll', () => syncScrollPosition(previewPane, editor), { passive: true });
-  }
-
-  function getScrollMetrics(element) {
-    return {
-      scrollTop: element.scrollTop,
-      scrollHeight: element.scrollHeight,
-      clientHeight: element.clientHeight
-    };
-  }
-
-  function getScrollRatio({ scrollTop, scrollHeight, clientHeight }) {
-    if (!scrollHeight) {
-      return 0;
-    }
-    const ratio = (scrollTop + clientHeight / 2) / scrollHeight;
-    return Math.min(Math.max(ratio, 0), 1);
-  }
-
-  function syncScrollPosition(source, target) {
-    if (isSyncingScroll) {
-      return;
-    }
-    isSyncingScroll = true;
-    const sourceMetrics = getScrollMetrics(source);
-    const targetMetrics = getScrollMetrics(target);
-    const ratio = getScrollRatio(sourceMetrics);
-    const maxTargetScroll = Math.max(0, targetMetrics.scrollHeight - targetMetrics.clientHeight);
-    const targetScrollTop = Math.min(Math.max(ratio * targetMetrics.scrollHeight - targetMetrics.clientHeight / 2, 0), maxTargetScroll);
-    if (Math.abs(target.scrollTop - targetScrollTop) > 1) {
-      target.scrollTop = targetScrollTop;
-    }
-    requestAnimationFrame(() => {
-      isSyncingScroll = false;
-    });
   }
 
   function handlePaste(event) {
@@ -453,6 +611,12 @@
         case 'open':
           triggerOpen();
           break;
+        case 'openFolder':
+          triggerOpenFolder();
+          break;
+        case 'toggleExplorer':
+          toggleExplorer();
+          break;
         case 'save':
           triggerSave();
           break;
@@ -487,6 +651,166 @@
         importFileContent(text, file.name, null);
       }
       fileInput.value = '';
+    });
+
+    if (folderInput) {
+      folderInput.addEventListener('change', async (event) => {
+        const files = Array.from(event.target.files || []);
+        const reconnectState = pendingFolderReconnectState;
+        pendingFolderReconnectState = null;
+        if (files.length > 0) {
+          await openFallbackFolder(files, reconnectState);
+        }
+        folderInput.value = '';
+      });
+    }
+  }
+
+  function bindFolderExplorer() {
+    if (!explorerTree) {
+      return;
+    }
+    explorerTree.addEventListener('click', (event) => {
+      const fileButton = event.target.closest('button[data-folder-path]');
+      if (!fileButton) {
+        return;
+      }
+      openFolderFile(fileButton.dataset.folderPath);
+    });
+    if (explorerReconnect) {
+      explorerReconnect.addEventListener('click', reconnectFolder);
+    }
+    if (explorerOpenFolder) {
+      explorerOpenFolder.addEventListener('click', () => triggerOpenFolder());
+    }
+  }
+
+  function bindExplorerControls() {
+    explorerToggles.forEach((button) => {
+      if (button.closest('.file-toolbar')) {
+        return;
+      }
+      button.addEventListener('click', toggleExplorer);
+    });
+    if (!explorerDivider || !explorer) {
+      return;
+    }
+    explorerDivider.addEventListener('mousedown', (event) => {
+      if (main.classList.contains('explorer-collapsed')) {
+        return;
+      }
+      isResizingExplorer = true;
+      explorerStartX = event.clientX;
+      explorerStartWidth = explorer.getBoundingClientRect().width;
+      explorerDivider.classList.add('dragging');
+      document.body.classList.add('resizing-explorer');
+      document.addEventListener('mousemove', handleExplorerDragMove);
+      document.addEventListener('mouseup', stopExplorerDragging);
+      event.preventDefault();
+    });
+    explorerDivider.addEventListener('keydown', (event) => {
+      const step = event.altKey ? 10 : 24;
+      const current = explorer.getBoundingClientRect().width;
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        applyExplorerWidth(current - step);
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        applyExplorerWidth(current + step);
+      }
+    });
+  }
+
+  function handleExplorerDragMove(event) {
+    if (!isResizingExplorer) {
+      return;
+    }
+    applyExplorerWidth(explorerStartWidth + event.clientX - explorerStartX);
+  }
+
+  function stopExplorerDragging() {
+    if (!isResizingExplorer) {
+      return;
+    }
+    isResizingExplorer = false;
+    explorerDivider.classList.remove('dragging');
+    document.body.classList.remove('resizing-explorer');
+    document.removeEventListener('mousemove', handleExplorerDragMove);
+    document.removeEventListener('mouseup', stopExplorerDragging);
+  }
+
+  function applyExplorerWidth(width, persist = true) {
+    if (!explorer) {
+      return;
+    }
+    const min = 140;
+    const available = main.clientWidth || window.innerWidth;
+    const max = Math.max(min, Math.min(480, available - 240));
+    const clamped = Math.min(Math.max(width, min), max);
+    root.style.setProperty('--explorer-width', `${Math.round(clamped)}px`);
+    if (explorerDivider) {
+      explorerDivider.setAttribute('aria-valuenow', String(Math.round(clamped)));
+    }
+    if (persist) {
+      localStorage.setItem(EXPLORER_WIDTH_KEY, String(Math.round(clamped)));
+    }
+    if (window.innerWidth > 960) {
+      applySplitWidth(editorPane.getBoundingClientRect().width);
+    }
+  }
+
+  function toggleExplorer() {
+    setExplorerCollapsed(!main.classList.contains('explorer-collapsed'));
+  }
+
+  function setExplorerCollapsed(collapsed, persist = true) {
+    main.classList.toggle('explorer-collapsed', collapsed);
+    if (explorerDivider) {
+      explorerDivider.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
+    }
+    explorerToggles.forEach((button) => {
+      button.setAttribute('aria-pressed', collapsed ? 'false' : 'true');
+      button.setAttribute('aria-label', collapsed ? 'Show Explorer' : 'Hide Explorer');
+      button.title = collapsed ? 'Show Explorer' : 'Hide Explorer';
+      button.textContent = collapsed ? '›' : '‹';
+    });
+    if (persist) {
+      localStorage.setItem(EXPLORER_COLLAPSED_KEY, String(collapsed));
+    }
+    window.requestAnimationFrame(restoreSplit);
+  }
+
+  function bindSynchronizedScrolling() {
+    editor.addEventListener('scroll', () => synchronizeScroll(editor, previewPane));
+    previewPane.addEventListener('scroll', () => synchronizeScroll(previewPane, editor));
+  }
+
+  function synchronizeScroll(source, target) {
+    if (scrollSyncTarget === source) {
+      return;
+    }
+    const sourceRange = source.scrollHeight - source.clientHeight;
+    const targetRange = target.scrollHeight - target.clientHeight;
+    const progress = sourceRange > 0 ? source.scrollTop / sourceRange : 0;
+    scrollSyncTarget = target;
+    target.scrollTop = targetRange > 0 ? progress * targetRange : 0;
+    if (scrollSyncRelease) {
+      window.cancelAnimationFrame(scrollSyncRelease);
+    }
+    scrollSyncRelease = window.requestAnimationFrame(() => {
+      scrollSyncTarget = null;
+      scrollSyncRelease = 0;
+    });
+  }
+
+  function bindPreviewLinks() {
+    preview.addEventListener('click', (event) => {
+      const link = event.target.closest('a[data-folder-path]');
+      if (!link) {
+        return;
+      }
+      event.preventDefault();
+      openFolderFile(link.dataset.folderPath, link.dataset.folderFragment || '');
     });
   }
 
@@ -524,6 +848,7 @@
     window.addEventListener('resize', () => {
       if (window.innerWidth <= 960) {
         divider.setAttribute('aria-hidden', 'true');
+        applySplitWidth(0);
       } else {
         divider.removeAttribute('aria-hidden');
         restoreSplit();
@@ -561,7 +886,10 @@
       return;
     }
     const min = 200;
-    const max = Math.max(min, main.clientWidth - min);
+    const explorerWidth = explorer
+      ? explorer.getBoundingClientRect().width + (explorerDivider ? explorerDivider.getBoundingClientRect().width : 0)
+      : 0;
+    const max = Math.max(min, main.clientWidth - explorerWidth - min);
     const clamped = Math.min(Math.max(width, min), max);
     editorPane.style.flex = `0 0 ${clamped}px`;
     previewPane.style.flex = '1 1 auto';
@@ -636,6 +964,7 @@
     const html = marked.parse(text);
     const clean = DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
     preview.innerHTML = clean;
+    assignHeadingIds();
     transformMermaidCodeBlocks();
     promoteMultilineCode();
     if (window.hljs && typeof window.hljs.highlightElement === 'function') {
@@ -645,7 +974,26 @@
       });
     }
     enforceSafeLinks();
-    syncScrollPosition(editor, previewPane);
+  }
+
+  function assignHeadingIds() {
+    const used = new Set();
+    preview.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach((heading) => {
+      const base = (heading.id || heading.textContent || 'section')
+        .trim()
+        .toLowerCase()
+        .replace(/[^\w\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-');
+      let id = base || 'section';
+      let suffix = 1;
+      while (used.has(id)) {
+        id = `${base}-${suffix}`;
+        suffix += 1;
+      }
+      heading.id = id;
+      used.add(id);
+    });
   }
 
   function promoteMultilineCode() {
@@ -679,9 +1027,78 @@
     const links = preview.querySelectorAll('a');
     for (let i = 0; i < links.length; i += 1) {
       const link = links[i];
-      link.setAttribute('target', '_blank');
-      link.setAttribute('rel', 'noreferrer noopener');
+      const href = link.getAttribute('href') || '';
+      const folderTarget = resolveFolderMarkdownLink(href);
+      if (folderTarget) {
+        link.dataset.folderPath = folderTarget.path;
+        link.dataset.folderFragment = folderTarget.fragment;
+        link.removeAttribute('target');
+        link.removeAttribute('rel');
+      } else if (href.startsWith('#')) {
+        link.removeAttribute('target');
+        link.removeAttribute('rel');
+      } else {
+        link.setAttribute('target', '_blank');
+        link.setAttribute('rel', 'noreferrer noopener');
+      }
     }
+  }
+
+  function resolveFolderMarkdownLink(href) {
+    if (!openedFolder || !activeFolderPath || !href || href.startsWith('#')) {
+      return null;
+    }
+    if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(href)) {
+      return null;
+    }
+    const hashIndex = href.indexOf('#');
+    const fragment = hashIndex >= 0 ? href.slice(hashIndex + 1) : '';
+    const withoutHash = hashIndex >= 0 ? href.slice(0, hashIndex) : href;
+    const pathPart = withoutHash.split('?')[0];
+    if (!/\.(?:md|markdown)$/i.test(pathPart)) {
+      return null;
+    }
+    let decodedPath;
+    try {
+      decodedPath = decodeURIComponent(pathPart).replace(/\\/g, '/');
+    } catch (error) {
+      return null;
+    }
+    const currentDirectory = activeFolderPath.includes('/')
+      ? activeFolderPath.slice(0, activeFolderPath.lastIndexOf('/'))
+      : '';
+    const candidate = decodedPath.startsWith('/')
+      ? decodedPath.slice(1)
+      : `${currentDirectory}/${decodedPath}`;
+    const normalized = normalizeFolderPath(candidate);
+    if (!normalized) {
+      return null;
+    }
+    const resolvedPath = folderPathLookup.get(normalized.toLowerCase());
+    if (!resolvedPath || !folderEntries.has(resolvedPath)) {
+      return null;
+    }
+    return { path: resolvedPath, fragment };
+  }
+
+  function normalizeFolderPath(path) {
+    const parts = [];
+    const segments = String(path || '').replace(/\\/g, '/').split('/');
+    for (let index = 0; index < segments.length; index += 1) {
+      const segment = segments[index];
+      if (!segment || segment === '.') {
+        continue;
+      }
+      if (segment === '..') {
+        if (parts.length === 0) {
+          return '';
+        }
+        parts.pop();
+      } else {
+        parts.push(segment);
+      }
+    }
+    return parts.join('/');
   }
 
   function transformMermaidCodeBlocks() {
@@ -1205,12 +1622,16 @@
       return;
     }
     currentDocumentId = id;
+    activeFolderPath = folderPathsByDocumentId.get(id)
+      || (openedFolder && doc.folderId === openedFolder.id ? doc.folderPath : null)
+      || null;
     editor.value = doc.content || '';
     clearCommandHistory();
     updatePreview();
     currentFileName = doc.name || 'Untitled.md';
     currentFileHandle = fileHandles.get(id) || null;
     updateDocumentTitle();
+    syncFolderExplorerSelection();
     if (options.focus !== false) {
       editor.focus();
     }
@@ -1266,6 +1687,11 @@
       return;
     }
     fileHandles.delete(id);
+    const folderPath = folderPathsByDocumentId.get(id);
+    if (folderPath) {
+      folderDocumentIds.delete(folderPath);
+      folderPathsByDocumentId.delete(id);
+    }
     delete documents[id];
     let nextId = currentDocumentId;
     if (currentDocumentId === id) {
@@ -1751,6 +2177,296 @@
     createDocument(generateUntitledName(), '', { focus: true });
     currentFileHandle = null;
     showToast('New document ready');
+  }
+
+  async function triggerOpenFolder(options = {}) {
+    if (supportsDirectoryAccess) {
+      try {
+        const directoryHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+        if (!directoryHandle) {
+          return;
+        }
+        const reconnectState = options.reconnectState;
+        const isReconnect = reconnectState && reconnectState.name === directoryHandle.name;
+        const folderId = isReconnect ? reconnectState.id : generateFolderId();
+        rememberedDirectoryHandle = directoryHandle;
+        try {
+          await storeDirectoryHandle(folderId, directoryHandle);
+        } catch (storageError) {
+          console.warn('Unable to persist folder handle', storageError);
+        }
+        const rootNode = await readDirectoryTree(directoryHandle, '');
+        await activateFolder(rootNode, directoryHandle.name, directoryHandle, {
+          id: folderId,
+          initialPath: isReconnect ? reconnectState.activePath : null
+        });
+      } catch (error) {
+        if (error && error.name !== 'AbortError') {
+          console.error(error);
+          showToast('Unable to open folder');
+        }
+      }
+    } else if (folderInput) {
+      pendingFolderReconnectState = options.reconnectState || null;
+      folderInput.click();
+    } else {
+      showToast('Folder access is not supported in this browser');
+    }
+  }
+
+  async function readDirectoryTree(directoryHandle, basePath) {
+    const node = {
+      type: 'directory',
+      name: directoryHandle.name,
+      path: basePath,
+      handle: directoryHandle,
+      children: []
+    };
+    for await (const [name, handle] of directoryHandle.entries()) {
+      const path = normalizeFolderPath(basePath ? `${basePath}/${name}` : name);
+      if (handle.kind === 'directory') {
+        node.children.push(await readDirectoryTree(handle, path));
+      } else if (/\.(?:md|markdown)$/i.test(name)) {
+        node.children.push({ type: 'file', name, path, handle });
+      }
+    }
+    sortFolderChildren(node);
+    return node;
+  }
+
+  async function openFallbackFolder(files, reconnectState = null) {
+    const firstPath = files[0].webkitRelativePath || files[0].name;
+    const rootName = firstPath.includes('/') ? firstPath.split('/')[0] : 'Selected folder';
+    const rootNode = { type: 'directory', name: rootName, path: '', children: [] };
+    const directories = new Map([['', rootNode]]);
+
+    files.forEach((file) => {
+      const rawParts = (file.webkitRelativePath || file.name).split('/').filter(Boolean);
+      const parts = rawParts[0] === rootName ? rawParts.slice(1) : rawParts;
+      let parentPath = '';
+      let parent = rootNode;
+      parts.slice(0, -1).forEach((part) => {
+        const path = normalizeFolderPath(parentPath ? `${parentPath}/${part}` : part);
+        let directory = directories.get(path);
+        if (!directory) {
+          directory = { type: 'directory', name: part, path, children: [] };
+          directories.set(path, directory);
+          parent.children.push(directory);
+        }
+        parent = directory;
+        parentPath = path;
+      });
+      const name = parts[parts.length - 1];
+      if (name && /\.(?:md|markdown)$/i.test(name)) {
+        const path = normalizeFolderPath(parentPath ? `${parentPath}/${name}` : name);
+        parent.children.push({ type: 'file', name, path, file });
+      }
+    });
+    sortFolderChildren(rootNode);
+    const isReconnect = reconnectState && reconnectState.name === rootName;
+    await activateFolder(rootNode, rootName, null, {
+      id: isReconnect ? reconnectState.id : generateFolderId(),
+      initialPath: isReconnect ? reconnectState.activePath : null
+    });
+  }
+
+  function generateFolderId() {
+    return typeof window.crypto !== 'undefined' && typeof window.crypto.randomUUID === 'function'
+      ? window.crypto.randomUUID()
+      : `folder-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6)}`;
+  }
+
+  function sortFolderChildren(node) {
+    node.children.sort((left, right) => {
+      if (left.type !== right.type) {
+        return left.type === 'directory' ? -1 : 1;
+      }
+      return left.name.localeCompare(right.name, undefined, { sensitivity: 'base' });
+    });
+    node.children.forEach((child) => {
+      if (child.type === 'directory') {
+        sortFolderChildren(child);
+      }
+    });
+  }
+
+  async function activateFolder(rootNode, name, directoryHandle, options = {}) {
+    const folderId = options.id || generateFolderId();
+    openedFolder = { id: folderId, name, handle: directoryHandle, root: rootNode };
+    activeFolderPath = null;
+    folderEntries.clear();
+    folderPathLookup.clear();
+    folderDocumentIds.clear();
+    folderPathsByDocumentId.clear();
+    indexFolderFiles(rootNode);
+    Object.values(documents).forEach((doc) => {
+      if (doc.folderId !== folderId || !doc.folderPath || !folderEntries.has(doc.folderPath)) {
+        return;
+      }
+      folderDocumentIds.set(doc.folderPath, doc.id);
+      folderPathsByDocumentId.set(doc.id, doc.folderPath);
+      const entry = folderEntries.get(doc.folderPath);
+      if (entry && entry.handle) {
+        fileHandles.set(doc.id, entry.handle);
+      }
+    });
+    renderFolderExplorer();
+    const current = getCurrentDocument();
+    const rememberedPath = normalizeFolderPath(options.initialPath || '');
+    const currentPath = current && current.folderId === folderId ? current.folderPath : null;
+    const targetPath = folderEntries.has(rememberedPath)
+      ? rememberedPath
+      : folderEntries.has(currentPath) ? currentPath : folderEntries.keys().next().value;
+    if (targetPath) {
+      await openFolderFile(targetPath);
+      if (options.notify !== false) {
+        showToast(`Opened ${name}`);
+      }
+    } else {
+      showToast('No Markdown files found');
+      saveFolderState();
+    }
+  }
+
+  function indexFolderFiles(node) {
+    node.children.forEach((child) => {
+      if (child.type === 'directory') {
+        indexFolderFiles(child);
+      } else {
+        folderEntries.set(child.path, child);
+        folderPathLookup.set(child.path.toLowerCase(), child.path);
+      }
+    });
+  }
+
+  async function openFolderFile(path, fragment) {
+    const entry = folderEntries.get(path);
+    if (!entry) {
+      showToast('Markdown file not found');
+      return;
+    }
+    try {
+      let documentId = folderDocumentIds.get(path);
+      if (!documentId || !documents[documentId]) {
+        const file = entry.handle ? await entry.handle.getFile() : entry.file;
+        const content = await file.text();
+        const current = getCurrentDocument();
+        const canReuseCurrent = current
+          && (!current.content || current.content.trim() === '')
+          && /^untitled/i.test(current.name || '');
+        if (canReuseCurrent) {
+          documentId = current.id;
+          current.name = entry.name;
+          current.content = content.replace(/\r\n?/g, '\n');
+          current.updatedAt = Date.now();
+          current.folderId = openedFolder ? openedFolder.id : null;
+          current.folderPath = path;
+        } else {
+          documentId = createDocument(entry.name, content, {
+            makeCurrent: false,
+            persist: false,
+            render: false,
+            focus: false
+          });
+          documents[documentId].name = entry.name;
+          documents[documentId].folderId = openedFolder ? openedFolder.id : null;
+          documents[documentId].folderPath = path;
+        }
+        folderDocumentIds.set(path, documentId);
+        folderPathsByDocumentId.set(documentId, path);
+        if (entry.handle) {
+          fileHandles.set(documentId, entry.handle);
+        }
+      }
+      setCurrentDocument(documentId, { focus: false });
+      saveFolderState();
+      saveDocumentsToStorage();
+      if (fragment) {
+        window.requestAnimationFrame(() => scrollPreviewToFragment(fragment));
+      }
+    } catch (error) {
+      console.error(error);
+      showToast(`Unable to open ${entry.name}`);
+    }
+  }
+
+  function scrollPreviewToFragment(fragment) {
+    let decoded = fragment;
+    try {
+      decoded = decodeURIComponent(fragment);
+    } catch (error) {
+      decoded = fragment;
+    }
+    const target = Array.from(preview.querySelectorAll('[id]')).find((element) => element.id === decoded);
+    if (target) {
+      target.scrollIntoView({ block: 'start' });
+    }
+  }
+
+  function renderFolderExplorer() {
+    if (!explorer || !explorerTree || !explorerName || !explorerEmpty) {
+      return;
+    }
+    explorerName.textContent = openedFolder ? openedFolder.name : 'No folder open';
+    explorerName.title = openedFolder ? openedFolder.name : '';
+    explorerTree.replaceChildren();
+    explorerEmpty.hidden = Boolean(openedFolder);
+    if (explorerEmptyMessage) {
+      explorerEmptyMessage.textContent = 'Open a folder to browse Markdown files.';
+    }
+    if (explorerReconnect) {
+      explorerReconnect.hidden = true;
+    }
+    if (explorerOpenFolder) {
+      explorerOpenFolder.hidden = false;
+    }
+    if (!openedFolder) {
+      return;
+    }
+    const list = document.createElement('ul');
+    list.className = 'file-tree';
+    openedFolder.root.children.forEach((node) => list.appendChild(createTreeNode(node)));
+    explorerTree.appendChild(list);
+  }
+
+  function syncFolderExplorerSelection() {
+    if (!explorerTree) {
+      return;
+    }
+    explorerTree.querySelectorAll('button[data-folder-path]').forEach((button) => {
+      const isActive = button.dataset.folderPath === activeFolderPath;
+      button.classList.toggle('is-active', isActive);
+      if (isActive) {
+        button.setAttribute('aria-current', 'page');
+      } else {
+        button.removeAttribute('aria-current');
+      }
+    });
+  }
+
+  function createTreeNode(node) {
+    const item = document.createElement('li');
+    if (node.type === 'directory') {
+      const details = document.createElement('details');
+      const summary = document.createElement('summary');
+      summary.textContent = node.name;
+      const list = document.createElement('ul');
+      node.children.forEach((child) => list.appendChild(createTreeNode(child)));
+      details.append(summary, list);
+      item.appendChild(details);
+      return item;
+    }
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.folderPath = node.path;
+    button.textContent = node.name;
+    button.title = node.path;
+    if (node.path === activeFolderPath) {
+      button.classList.add('is-active');
+      button.setAttribute('aria-current', 'page');
+    }
+    item.appendChild(button);
+    return item;
   }
 
   async function triggerOpen() {
