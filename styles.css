@@ -313,11 +313,22 @@ body {
 .tool-btn--italic { font-family:Georgia,serif; font-size:1rem; font-style:italic; }
 .tool-btn--strike { text-decoration:line-through; }
 .tool-btn--code { font-family:"SFMono-Regular",Consolas,monospace; font-size:.75rem; }
+.tool-btn svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
 .app-menu { position:relative; flex:0 0 auto; }
 .app-menu summary { list-style:none; border:1px solid var(--border); border-radius:6px; background:var(--pane-bg); color:var(--fg); cursor:pointer; font-size:.85rem; padding:.35rem .6rem; }
 .app-menu summary::-webkit-details-marker { display:none; }
 .app-menu[open] summary { border-color:var(--accent); background:var(--accent-soft); }
 .app-menu .file-toolbar { position:absolute; z-index:22; top:calc(100% + .4rem); right:0; border:1px solid var(--border); border-radius:8px; background:var(--pane-bg); box-shadow:0 12px 28px rgba(15,23,42,.18); }
+.autosave-toggle { position:relative; inline-size:92px; block-size:30px; display:inline-flex; align-items:center; justify-content:space-between; padding:0 8px; overflow:hidden; border:1px solid var(--border); border-radius:999px; background:var(--pane-bg); color:var(--accent); font:inherit; font-size:.64rem; font-weight:650; letter-spacing:.01em; cursor:pointer; transition:border-color .2s ease, background .2s ease; }
+.autosave-toggle::after { content:""; position:absolute; inset:2px auto 2px 2px; inline-size:42px; border-radius:999px; background:var(--bg); box-shadow:0 2px 6px rgba(15,23,42,.15); transform:translateX(0); transition:transform .2s ease; }
+.autosave-toggle[aria-pressed="true"]::after { transform:translateX(46px); }
+.autosave-toggle__local, .autosave-toggle__disk { position:relative; z-index:1; inline-size:38px; text-align:center; transition:opacity .2s ease; pointer-events:none; }
+.autosave-toggle[aria-pressed="true"] .autosave-toggle__local, .autosave-toggle[aria-pressed="false"] .autosave-toggle__disk { opacity:.38; }
+.autosave-toggle:hover:not(:disabled), .autosave-toggle:focus-visible { border-color:var(--accent); outline:none; background:var(--accent-soft); }
+.autosave-toggle:active:not(:disabled) { background:var(--pane-bg); }
+.autosave-toggle:disabled { cursor:not-allowed; }
+.autosave-toggle[hidden] { display:none; }
+.autosave-toggle.is-unavailable { opacity:.55; cursor:not-allowed; }
 .view-toggle { display:flex; gap:.25rem; padding:.2rem; background:var(--bg); border:1px solid var(--border); border-radius:8px; }
 .view-toggle button { border:0; background:transparent; color:var(--fg); padding:.32rem .55rem; border-radius:5px; cursor:pointer; font-size:.8rem; }
 .view-toggle button[aria-pressed="true"] { background:var(--pane-bg); color:var(--accent); box-shadow:0 1px 2px rgba(15,23,42,.12); }
@@ -728,6 +739,12 @@ body.resizing-explorer {
   margin: 1.5em 0 0.8em;
 }
 
+/* The document padding already provides breathing room at the top. Avoid
+   stacking it with the normal section spacing on the opening block. */
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+
 .markdown-body h1 {
   font-size: 2rem;
 }
@@ -1136,6 +1153,31 @@ body.dragging #drop-zone {
     display: flex;
   }
 
+}
+
+/* Keep desktop controls on one header row. The editor actions scroll within
+   their own column if space is genuinely limited, instead of pushing the
+   theme and view controls into empty rows. */
+.app-header { display:grid; grid-template-columns:auto minmax(0, 1fr) auto auto; align-items:center; gap:.6rem; padding:.6rem 1rem; }
+.logo-title { min-width:0; gap:.55rem; }
+.logo-title h1 { font-size:1.15rem; white-space:nowrap; }
+.document-title-input { width:clamp(110px, 11vw, 180px); }
+.save-status { inline-size:92px; font-size:.75rem; overflow:hidden; white-space:nowrap; }
+.header-groups { min-width:0; flex-wrap:nowrap; justify-content:flex-end; }
+.editor-toolbar { min-width:0; flex-wrap:nowrap; overflow-x:auto; }
+.view-toggle { flex:0 0 auto; flex-wrap:nowrap; }
+
+@media (max-width: 960px) {
+  .app-header { display:flex; flex-wrap:wrap; padding:.45rem .75rem; }
+  .header-groups { order:3; flex:1 1 100%; justify-content:flex-start; }
+  .editor-toolbar { flex:1 1 auto; }
+  .view-toggle { overflow:visible; max-width:none; flex-wrap:wrap; }
+}
+
+@media (max-width: 560px) {
+  .logo-title { flex-wrap:wrap; }
+  .save-status { display:none; }
+  .toolbar-group { border-right:0; }
 }
 
 @media print {

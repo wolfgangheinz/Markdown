@@ -9,7 +9,7 @@ Features
 - Local-vault workspace with persistent tabs, Quick Switcher (`Ctrl/⌘+O`), Command Palette (`Ctrl/⌘+P`), vault search (`Ctrl/⌘+Shift+F`), and Outline / Backlinks / local graph panels.
 - GitHub-flavoured Markdown rendering (headings, lists, tables, task lists, code blocks, etc.).
 - Toolbar and keyboard shortcuts for common formatting, including highlight and fenced code insertion.
-- Autosave to `localStorage`, plus open/save via the native File System Access API (with download fallbacks).
+- Outside a folder, drafts always autosave to `localStorage` and **Save** downloads a copy. Opened writable folders add an **Autosave to disk** toggle; when disabled, changes stay local until Save and unsaved files are protected on tab/browser close.
 - Create a Markdown file in the selected Explorer folder with the **+** button when folder write permission is available.
 - Syntax-highlighted code blocks powered by Highlight.js.
 - Copy rendered HTML, export standalone HTML, or print to PDF.

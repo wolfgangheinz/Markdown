@@ -26,6 +26,7 @@
   const themeToggle = document.querySelector('.theme-toggle');
   const docTitleInput = document.getElementById('document-title');
   const saveStatus = document.getElementById('save-status');
+  const folderAutosaveToggle = document.querySelector('[data-folder-autosave]');
   const draftManager = document.querySelector('.draft-manager');
   const draftList = draftManager ? draftManager.querySelector('.draft-manager__list') : null;
   const draftEmpty = draftManager ? draftManager.querySelector('.draft-manager__empty') : null;
@@ -68,6 +69,7 @@
   const EXPLORER_WIDTH_KEY = 'markdown-studio-explorer-width';
   const EXPLORER_COLLAPSED_KEY = 'markdown-studio-explorer-collapsed';
   const FOLDER_STATE_KEY = 'markdown-studio-folder-state';
+  const FOLDER_AUTOSAVE_KEY = 'markdown-studio-folder-autosave';
   const FOLDER_DATABASE = 'markdown-studio-files';
   const FOLDER_STORE = 'handles';
   const THEME_KEY = 'markdown-studio-theme';
@@ -98,6 +100,7 @@
   let documents = {};
   let currentDocumentId = null;
   let autosaveTimer = 0;
+  let folderAutosaveEnabled = localStorage.getItem(FOLDER_AUTOSAVE_KEY) !== 'false';
   let previewTimer = 0;
   let visualSyncTimer = 0;
   let isSyncingVisual = false;
@@ -138,6 +141,32 @@
       filter: ['mark'],
       replacement(content) {
         return content ? `==${content}==` : '';
+      }
+    });
+    turndownService.addRule('taskCheckbox', {
+      filter(node) {
+        return node.nodeName === 'INPUT' && node.type === 'checkbox';
+      },
+      replacement(_content, node) {
+        return node.checked ? '[x] ' : '[ ] ';
+      }
+    });
+    turndownService.addRule('table', {
+      filter: 'table',
+      replacement(_content, table) {
+        const rows = Array.from(table.querySelectorAll('tr')).map((row) =>
+          Array.from(row.querySelectorAll('th, td')).map((cell) => cell.textContent
+            .replace(/\s+/g, ' ')
+            .trim()
+            .replace(/\|/g, '\\|'))
+        ).filter((cells) => cells.length > 0);
+        if (!rows.length) return '';
+        const columnCount = Math.max(...rows.map((cells) => cells.length));
+        const normalize = (cells) => Array.from({ length: columnCount }, (_, index) => cells[index] || '');
+        const header = normalize(rows[0]);
+        const separator = Array(columnCount).fill('---');
+        const body = rows.slice(1).map(normalize);
+        return `\n\n${[header, separator, ...body].map((cells) => `| ${cells.join(' | ')} |`).join('\n')}\n\n`;
       }
     });
   }
@@ -225,6 +254,8 @@
                 id: doc.id,
                 name,
                 content: typeof doc.content === 'string' ? doc.content : '',
+                savedContent: typeof doc.savedContent === 'string' ? doc.savedContent : (typeof doc.content === 'string' ? doc.content : ''),
+                openedContent: typeof doc.openedContent === 'string' ? doc.openedContent : (typeof doc.content === 'string' ? doc.content : ''),
                 updatedAt: typeof doc.updatedAt === 'number' ? doc.updatedAt : Date.now(),
                 folderId: typeof doc.folderId === 'string' ? doc.folderId : null,
                 folderPath: typeof doc.folderPath === 'string' ? normalizeFolderPath(doc.folderPath) : null
@@ -294,11 +325,22 @@
     if (autosaveTimer) {
       clearTimeout(autosaveTimer);
     }
+    const documentId = currentDocumentId;
     autosaveTimer = window.setTimeout(() => {
       autosaveTimer = 0;
-      saveDocumentsToStorage();
+      const doc = documents[documentId];
+      if (isFolderDocument(doc) && folderAutosaveEnabled) {
+        autosaveFolderDocument(doc);
+      } else {
+        saveDocumentsToStorage();
+        updateSaveStatusForCurrentDocument();
+      }
     }, AUTOSAVE_DELAY);
-    setSaveStatus('Saving…');
+    if (isFolderDocument(getCurrentDocument()) && !folderAutosaveEnabled) {
+      setSaveStatus('Unsaved changes');
+    } else {
+      setSaveStatus(isFolderDocument(getCurrentDocument()) ? 'Saving to disk…' : 'Saving locally…');
+    }
   }
 
   function schedulePreviewUpdate() {
@@ -320,26 +362,88 @@
     const flush = () => {
       if (autosaveTimer) window.clearTimeout(autosaveTimer);
       autosaveTimer = 0;
-      saveDocumentsToStorage();
+      saveDocumentsToStorage(false);
       persistWorkspaceSession();
     };
     window.addEventListener('pagehide', flush);
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') flush();
     });
+    window.addEventListener('beforeunload', (event) => {
+      if (!folderAutosaveEnabled && Object.values(documents).some(isDocumentDirty)) {
+        event.preventDefault();
+        event.returnValue = '';
+      }
+    });
   }
 
-  function saveDocumentsToStorage() {
+  function saveDocumentsToStorage(updateStatus = true) {
     try {
       const payload = JSON.stringify({ currentId: currentDocumentId, documents });
       localStorage.setItem(DOCUMENTS_KEY, payload);
       updateStorageIndicator(payload);
-      setSaveStatus('Saved locally');
+      if (updateStatus) setSaveStatus('Saved locally');
       return true;
     } catch (err) {
       console.warn('Autosave failed', err);
       setSaveStatus('Could not save locally', 'error');
       showToast('Could not save locally. Open Drafts to free storage.');
+      return false;
+    }
+  }
+
+  function isFolderDocument(doc) {
+    return Boolean(doc && openedFolder && doc.folderId === openedFolder.id && doc.folderPath);
+  }
+
+  function isDocumentDirty(doc) {
+    return Boolean(doc && isFolderDocument(doc) && doc.content !== doc.savedContent);
+  }
+
+  function updateSaveStatusForCurrentDocument() {
+    const doc = getCurrentDocument();
+    if (!isFolderDocument(doc)) {
+      setSaveStatus('Saved locally');
+    } else if (isDocumentDirty(doc)) {
+      setSaveStatus('Unsaved changes');
+    } else {
+      setSaveStatus(folderAutosaveEnabled ? 'Saved to disk' : 'Saved');
+    }
+  }
+
+  function updateFolderAutosaveControl() {
+    if (!folderAutosaveToggle) return;
+    const visible = Boolean(openedFolder);
+    const writable = Boolean(openedFolder && openedFolder.handle);
+    folderAutosaveToggle.hidden = !visible;
+    folderAutosaveToggle.setAttribute('aria-pressed', String(folderAutosaveEnabled));
+    folderAutosaveToggle.disabled = visible && !writable;
+    folderAutosaveToggle.classList.toggle('is-unavailable', visible && !writable);
+    const description = folderAutosaveEnabled ? 'Autosave to disk' : 'Keep changes locally until saved';
+    folderAutosaveToggle.setAttribute('aria-label', description);
+    folderAutosaveToggle.title = writable
+      ? description
+      : 'This browser opened the folder read-only; autosave to disk is unavailable';
+  }
+
+  async function autosaveFolderDocument(doc = getCurrentDocument()) {
+    if (!isFolderDocument(doc) || !folderAutosaveEnabled) return false;
+    const handle = fileHandles.get(doc.id);
+    if (!handle) {
+      setSaveStatus('Could not save to disk', 'error');
+      return false;
+    }
+    const content = doc.content;
+    try {
+      await writeFile(handle, content);
+      if (doc.content === content) doc.savedContent = content;
+      saveDocumentsToStorage(false);
+      if (doc.id === currentDocumentId) updateSaveStatusForCurrentDocument();
+      return true;
+    } catch (error) {
+      console.error(error);
+      if (doc.id === currentDocumentId) setSaveStatus('Could not save to disk', 'error');
+      if (doc.id === currentDocumentId) showToast('Could not autosave to disk');
       return false;
     }
   }
@@ -496,7 +600,26 @@
 
   function clearCurrentDraft() {
     const doc = getCurrentDocument();
-    if (!doc || !window.confirm(`Discard the local draft “${doc.name}”? This cannot be undone.`)) return;
+    if (!doc) return;
+    if (isFolderDocument(doc)) {
+      const restore = folderAutosaveEnabled ? doc.openedContent : doc.savedContent;
+      const message = folderAutosaveEnabled
+        ? `Revert “${doc.name}” to the version from when it was first opened? This will also write that version to disk.`
+        : `Discard unsaved changes in “${doc.name}” and restore the last saved version?`;
+      if (!window.confirm(message)) return;
+      doc.content = restore;
+      doc.updatedAt = Date.now();
+      editor.value = restore;
+      updatePreview();
+      if (folderAutosaveEnabled) autosaveFolderDocument();
+      else {
+        saveDocumentsToStorage(false);
+        updateSaveStatusForCurrentDocument();
+      }
+      showToast('Changes discarded');
+      return;
+    }
+    if (!window.confirm(`Discard the local draft “${doc.name}”? This cannot be undone.`)) return;
     deleteDocument(currentDocumentId);
     showToast('Draft cleared');
   }
@@ -731,6 +854,16 @@
       const menu = button.closest('.app-menu');
       if (menu) menu.open = false;
     });
+
+    if (folderAutosaveToggle) {
+      folderAutosaveToggle.addEventListener('click', () => {
+        folderAutosaveEnabled = !folderAutosaveEnabled;
+        localStorage.setItem(FOLDER_AUTOSAVE_KEY, String(folderAutosaveEnabled));
+        updateFolderAutosaveControl();
+        if (folderAutosaveEnabled && isDocumentDirty(getCurrentDocument())) autosaveFolderDocument();
+        else updateSaveStatusForCurrentDocument();
+      });
+    }
 
     fileInput.addEventListener('change', async (event) => {
       const file = event.target.files && event.target.files[0];
@@ -1064,8 +1197,15 @@
       localStorage.setItem(VIEW_KEY, chosen);
     }
     setResponsivePressed(chosen);
+    if (wasVisual && chosen !== 'wysiwyg') {
+      updatePreview();
+    }
     if (chosen === 'wysiwyg') {
       updatePreview();
+      preview.querySelectorAll('li input[type="checkbox"]').forEach((checkbox) => {
+        checkbox.disabled = false;
+        checkbox.contentEditable = 'false';
+      });
       window.requestAnimationFrame(() => preview.focus());
     }
   }
@@ -1163,9 +1303,14 @@
     persistWorkspaceSession();
   }
 
-  function closeWorkspaceTab(id) {
+  async function closeWorkspaceTab(id) {
     const index = workspaceSession.tabs.indexOf(id);
     if (index < 0) return;
+    const doc = documents[id];
+    if (isDocumentDirty(doc) && !folderAutosaveEnabled) {
+      const save = window.confirm(`“${doc.name}” has unsaved changes. Save before closing? Choose Cancel to close without saving.`);
+      if (save && !await saveFolderDocument(doc)) return;
+    }
     captureWorkspacePosition(id);
     workspaceSession.tabs.splice(index, 1);
     if (workspaceSession.activeTab === id) {
@@ -1403,6 +1548,26 @@
       }
       const isMac = navigator.platform.toUpperCase().includes('MAC');
       const modKey = isMac ? event.metaKey : event.ctrlKey;
+      if (!modKey && event.key === 'Tab' && handleVisualListIndent(event.shiftKey)) {
+        event.preventDefault();
+        return;
+      }
+      if (!modKey && event.key === 'Enter' && handleVisualTaskEnter()) {
+        event.preventDefault();
+        return;
+      }
+      if (!modKey && event.key === 'Backspace' && exitVisualEmptyTask()) {
+        event.preventDefault();
+        return;
+      }
+      if (!modKey && (event.key === ' ' || event.key === 'Spacebar') && startVisualHeadingFromMarker()) {
+        event.preventDefault();
+        return;
+      }
+      if (!modKey && (event.key === ' ' || event.key === 'Spacebar') && startVisualListFromMarker()) {
+        event.preventDefault();
+        return;
+      }
       if (!modKey) {
         return;
       }
@@ -1418,6 +1583,157 @@
         syncVisualToMarkdown();
       }
     });
+    preview.addEventListener('change', (event) => {
+      if (isVisualMode() && event.target.matches('input[type="checkbox"]')) queueVisualSync();
+    });
+  }
+
+  function getVisualListItem() {
+    const selection = window.getSelection();
+    if (!selection || !selection.rangeCount || !preview.contains(selection.anchorNode)) return null;
+    const element = selection.anchorNode.nodeType === Node.ELEMENT_NODE
+      ? selection.anchorNode
+      : selection.anchorNode.parentElement;
+    return element && element.closest ? element.closest('li') : null;
+  }
+
+  function placeVisualCaret(element) {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    range.collapse(false);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    preview.focus();
+  }
+
+  function startVisualListFromMarker() {
+    const block = getVisualBlockAtCaret();
+    if (!block) return false;
+    const marker = block.textContent.trim();
+    const listName = marker === '-' || marker === '*' ? 'ul' : /^\d+\.$/.test(marker) ? 'ol' : '';
+    if (!listName) return false;
+    const list = document.createElement(listName);
+    const item = document.createElement('li');
+    list.appendChild(item);
+    block.replaceWith(list);
+    placeVisualCaret(item);
+    queueVisualSync();
+    return true;
+  }
+
+  function getVisualBlockAtCaret() {
+    const selection = window.getSelection();
+    if (!selection || !selection.isCollapsed || !selection.rangeCount || !preview.contains(selection.anchorNode)) return null;
+    const element = selection.anchorNode.nodeType === Node.ELEMENT_NODE
+      ? selection.anchorNode
+      : selection.anchorNode.parentElement;
+    const block = element && element.closest ? element.closest('p, div') : null;
+    return block && block !== preview ? block : null;
+  }
+
+  function startVisualHeadingFromMarker() {
+    const block = getVisualBlockAtCaret();
+    if (!block) return false;
+    const marker = block.textContent.trim();
+    if (!/^#{1,6}$/.test(marker)) return false;
+    const heading = document.createElement(`h${marker.length}`);
+    block.replaceWith(heading);
+    placeVisualCaret(heading);
+    queueVisualSync();
+    return true;
+  }
+
+  function handleVisualListIndent(outdent) {
+    const item = getVisualListItem();
+    if (!item) return false;
+    const list = item.parentElement;
+    if (!list || !/^(UL|OL)$/.test(list.tagName)) return false;
+    if (outdent) {
+      const parentItem = list.parentElement;
+      const parentList = parentItem && parentItem.parentElement;
+      if (!parentItem || parentItem.tagName !== 'LI' || !parentList || !/^(UL|OL)$/.test(parentList.tagName)) return true;
+      parentList.insertBefore(item, parentItem.nextSibling);
+      if (!list.children.length) list.remove();
+    } else {
+      const previous = item.previousElementSibling;
+      if (!previous || previous.tagName !== 'LI') return true;
+      let nested = Array.from(previous.children).find((child) => child.tagName === list.tagName);
+      if (!nested) {
+        nested = document.createElement(list.tagName.toLowerCase());
+        previous.appendChild(nested);
+      }
+      nested.appendChild(item);
+    }
+    placeVisualCaret(item);
+    queueVisualSync();
+    return true;
+  }
+
+  function getVisualTaskCheckbox(item) {
+    return item ? Array.from(item.children).find((child) => child.nodeName === 'INPUT' && child.type === 'checkbox') : null;
+  }
+
+  function ensureVisualTaskCheckbox(item) {
+    let checkbox = getVisualTaskCheckbox(item);
+    if (!checkbox) {
+      checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.contentEditable = 'false';
+      item.insertBefore(checkbox, item.firstChild);
+      item.insertBefore(document.createTextNode(' '), checkbox.nextSibling);
+    }
+    checkbox.disabled = false;
+    checkbox.contentEditable = 'false';
+    return checkbox;
+  }
+
+  function handleVisualTaskEnter() {
+    const item = getVisualListItem();
+    const checkbox = getVisualTaskCheckbox(item);
+    const list = item && item.parentElement;
+    if (!checkbox || !list || !/^(UL|OL)$/.test(list.tagName)) return false;
+    if (isVisualTaskEmpty(item)) return exitVisualEmptyTask(item);
+    const next = document.createElement('li');
+    ensureVisualTaskCheckbox(next);
+    list.insertBefore(next, item.nextSibling);
+    placeVisualCaret(next);
+    queueVisualSync();
+    return true;
+  }
+
+  function isVisualTaskEmpty(item) {
+    return Array.from(item.childNodes).every((node) => {
+      if (node.nodeType === Node.TEXT_NODE) return !node.textContent.trim();
+      if (node.nodeType !== Node.ELEMENT_NODE) return true;
+      if (node.nodeName === 'INPUT' && node.type === 'checkbox') return true;
+      if (/^(UL|OL)$/.test(node.nodeName)) return true;
+      return !node.textContent.trim();
+    });
+  }
+
+  function exitVisualEmptyTask(existingItem) {
+    const item = existingItem || getVisualListItem();
+    const checkbox = getVisualTaskCheckbox(item);
+    const list = item && item.parentElement;
+    if (!checkbox || !list || !/^(UL|OL)$/.test(list.tagName) || !isVisualTaskEmpty(item)) return false;
+    let rootList = list;
+    while (rootList.parentElement && rootList.parentElement.nodeName === 'LI' && rootList.parentElement.parentElement && /^(UL|OL)$/.test(rootList.parentElement.parentElement.nodeName)) {
+      rootList = rootList.parentElement.parentElement;
+    }
+    const paragraph = document.createElement('p');
+    paragraph.appendChild(document.createElement('br'));
+    rootList.parentNode.insertBefore(paragraph, rootList.nextSibling);
+    item.remove();
+    let currentList = list;
+    while (currentList && !currentList.children.length) {
+      const parent = currentList.parentElement;
+      currentList.remove();
+      currentList = parent && /^(UL|OL)$/.test(parent.nodeName) ? parent : null;
+    }
+    placeVisualCaret(paragraph);
+    queueVisualSync();
+    return true;
   }
 
   function queueVisualSync() {
@@ -1428,46 +1744,12 @@
     }, 550);
   }
 
-  function getVisualCaretOffset() {
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0 || !preview.contains(selection.anchorNode)) {
-      return null;
-    }
-    const range = selection.getRangeAt(0).cloneRange();
-    range.selectNodeContents(preview);
-    range.setEnd(selection.anchorNode, selection.anchorOffset);
-    return range.toString().length;
-  }
-
-  function restoreVisualCaret(offset) {
-    if (typeof offset !== 'number') {
-      return;
-    }
-    const walker = document.createTreeWalker(preview, NodeFilter.SHOW_TEXT);
-    let remaining = offset;
-    let node = walker.nextNode();
-    while (node) {
-      if (remaining <= node.textContent.length) {
-        const range = document.createRange();
-        range.setStart(node, remaining);
-        range.collapse(true);
-        const selection = window.getSelection();
-        selection.removeAllRanges();
-        selection.addRange(range);
-        return;
-      }
-      remaining -= node.textContent.length;
-      node = walker.nextNode();
-    }
-  }
-
   function syncVisualToMarkdown() {
     window.clearTimeout(visualSyncTimer);
     visualSyncTimer = 0;
     if (!isVisualMode() || !turndownService) {
       return;
     }
-    const caretOffset = getVisualCaretOffset();
     let markdown;
     try {
       markdown = turndownService.turndown(preview.innerHTML).replace(/\r\n?/g, '\n');
@@ -1488,10 +1770,8 @@
       doc.updatedAt = Date.now();
     }
     scheduleAutosave();
-    updatePreview();
+    updateActiveVaultIndex();
     isSyncingVisual = false;
-    preview.focus();
-    restoreVisualCaret(caretOffset);
   }
 
   function applyVisualFormatting(action) {
@@ -1507,7 +1787,7 @@
       case 'heading': command('formatBlock', 'h1'); break;
       case 'ul': command('insertUnorderedList'); break;
       case 'ol': command('insertOrderedList'); break;
-      case 'task': command('insertHTML', '<span>- [ ] </span>'); break;
+      case 'task': insertVisualTaskList(); return;
       case 'quote': command('formatBlock', 'blockquote'); break;
       case 'inlineCode': command('insertHTML', `<code>${escapeHtml(window.getSelection().toString() || 'code')}</code>`); break;
       case 'code': command('insertHTML', '<pre><code>code</code></pre>'); break;
@@ -1525,6 +1805,33 @@
       default: return;
     }
     queueVisualSync();
+  }
+
+  function insertVisualTaskList() {
+    const selection = window.getSelection();
+    let items = getSelectedVisualListItems(selection);
+    if (!items.length) {
+      preview.focus();
+      document.execCommand('insertUnorderedList');
+      items = getSelectedVisualListItems(window.getSelection());
+    }
+    if (!items.length) {
+      const list = document.createElement('ul');
+      const item = document.createElement('li');
+      list.appendChild(item);
+      preview.appendChild(list);
+      items = [item];
+    }
+    items.forEach(ensureVisualTaskCheckbox);
+    placeVisualCaret(items[items.length - 1]);
+    queueVisualSync();
+  }
+
+  function getSelectedVisualListItems(selection) {
+    if (!selection || !selection.rangeCount || !preview.contains(selection.anchorNode)) return [];
+    const range = selection.getRangeAt(0);
+    const items = Array.from(preview.querySelectorAll('li')).filter((item) => range.intersectsNode(item));
+    return items.length ? items : (getVisualListItem() ? [getVisualListItem()] : []);
   }
 
   function assignHeadingIds() {
@@ -1596,6 +1903,7 @@
   }
 
   function protectExternalMedia() {
+    if (isVisualMode()) return;
     preview.querySelectorAll('img[src]').forEach((image) => {
       const source = image.getAttribute('src') || '';
       if (!/^https?:\/\//i.test(source)) return;
@@ -2215,6 +2523,7 @@
     if (options.render !== false) {
       renderDraftList();
     }
+    updateSaveStatusForCurrentDocument();
   }
 
   function updateDocumentTitle() {
@@ -2245,6 +2554,8 @@
       id,
       name: resolvedName,
       content: typeof content === 'string' ? content : '',
+      savedContent: typeof content === 'string' ? content : '',
+      openedContent: typeof content === 'string' ? content : '',
       updatedAt: Date.now()
     };
     fileHandles.delete(id);
@@ -2871,6 +3182,7 @@
   async function activateFolder(rootNode, name, directoryHandle, options = {}) {
     const folderId = options.id || generateFolderId();
     openedFolder = { id: folderId, name, handle: directoryHandle, root: rootNode };
+    updateFolderAutosaveControl();
     activeFolderPath = null;
     selectedFolderPath = '';
     expandedFolderPaths = new Set();
@@ -2939,6 +3251,8 @@
           documentId = current.id;
           current.name = entry.name;
           current.content = content.replace(/\r\n?/g, '\n');
+          current.savedContent = current.content;
+          current.openedContent = current.content;
           current.updatedAt = Date.now();
           current.folderId = openedFolder ? openedFolder.id : null;
           current.folderPath = path;
@@ -2950,6 +3264,8 @@
             focus: false
           });
           documents[documentId].name = entry.name;
+          documents[documentId].savedContent = content.replace(/\r\n?/g, '\n');
+          documents[documentId].openedContent = content.replace(/\r\n?/g, '\n');
           documents[documentId].folderId = openedFolder ? openedFolder.id : null;
           documents[documentId].folderPath = path;
         }
@@ -3179,9 +3495,7 @@
           excludeAcceptAllOption: false,
           multiple: false
         });
-        if (!handle) {
-          return;
-        }
+        if (!handle) return false;
         const file = await handle.getFile();
         const text = await file.text();
         importFileContent(text, file.name, handle);
@@ -3199,29 +3513,52 @@
   async function triggerSave() {
     const doc = getCurrentDocument();
     if (!doc) {
-      return;
+      return false;
     }
     doc.content = editor.value;
     doc.updatedAt = Date.now();
-    if (supportsFileSystemAccess) {
-      if (!currentFileHandle) {
-        await triggerSaveAs();
-        return;
-      }
-      await writeFile(currentFileHandle);
-      showToast('Saved');
-    } else {
-      downloadFile(doc.name || 'document.md');
-      showToast('Downloaded');
+    if (isFolderDocument(doc)) {
+      return saveFolderDocument(doc);
     }
-    saveDocumentsToStorage();
+    // Outside an opened folder, Save is deliberately an export: drafts remain
+    // protected in local storage and the requested file is downloaded to disk.
+    downloadFile(doc.name || 'document.md');
+    saveDocumentsToStorage(false);
     renderDraftList();
+    setSaveStatus('Saved locally');
+    showToast('Downloaded');
+    return true;
+  }
+
+  async function saveFolderDocument(doc) {
+    const handle = fileHandles.get(doc.id);
+    if (!handle) {
+      showToast('This folder is read-only. Reopen it with write permission to save.');
+      setSaveStatus('Could not save to disk', 'error');
+      return false;
+    }
+    const content = doc.id === currentDocumentId ? editor.value : doc.content;
+    doc.content = content;
+    try {
+      await writeFile(handle, content);
+      doc.savedContent = content;
+      saveDocumentsToStorage(false);
+      renderDraftList();
+      updateSaveStatusForCurrentDocument();
+      showToast('Saved');
+      return true;
+    } catch (error) {
+      console.error(error);
+      showToast('Unable to save');
+      setSaveStatus('Could not save to disk', 'error');
+      return false;
+    }
   }
 
   async function triggerSaveAs() {
     const doc = getCurrentDocument();
     if (!doc) {
-      return;
+      return false;
     }
     if (supportsFileSystemAccess) {
       try {
@@ -3237,9 +3574,7 @@
             }
           ]
         });
-        if (!handle) {
-          return;
-        }
+        if (!handle) return false;
         currentFileHandle = handle;
         fileHandles.set(doc.id, handle);
         const handleName = handle.name || doc.name;
@@ -3247,14 +3582,18 @@
           renameDocument(doc.id, handleName, { notify: false, persist: false, render: false });
         }
         await writeFile(handle);
+        doc.savedContent = editor.value;
         showToast('Saved');
         saveDocumentsToStorage();
         renderDraftList();
+        updateSaveStatusForCurrentDocument();
+        return true;
       } catch (error) {
         if (error && error.name !== 'AbortError') {
           console.error(error);
           showToast('Unable to save');
         }
+        return false;
       }
     } else {
       const fallbackName = doc.name || 'document.md';
@@ -3262,12 +3601,13 @@
       showToast('Downloaded');
       saveDocumentsToStorage();
       renderDraftList();
+      return true;
     }
   }
 
-  async function writeFile(handle) {
+  async function writeFile(handle, content = editor.value) {
     const writable = await handle.createWritable();
-    await writable.write(editor.value.replace(/\r\n?/g, '\n'));
+    await writable.write(content.replace(/\r\n?/g, '\n'));
     await writable.close();
   }
 
