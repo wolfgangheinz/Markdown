@@ -1,17 +1,17 @@
 Offline Markdown Studio
 =======================
 
-A self-contained, browser-based Markdown editor designed for restricted environments. It bundles editing, live preview, autosave, export, and file handling into a single HTML file that runs entirely offline—no build step or backend required. The goal is to let you edit Markdown locally without pasting sensitive text into third-party web apps.
+A self-contained, browser-based Markdown editor designed for restricted environments. It bundles editing, live preview, autosave, export, and file handling into a small set of local HTML, CSS, JavaScript, and vendored assets that run entirely offline—no build step or backend required. The goal is to let you edit Markdown locally without pasting sensitive text into third-party web apps.
 
 Features
 --------
 - Compact grouped formatting toolbar, File menu, and Split / Visual / Markdown / Preview modes.
 - Local-vault workspace with persistent tabs, Quick Switcher (`Ctrl/⌘+O`), Command Palette (`Ctrl/⌘+P`), vault search (`Ctrl/⌘+Shift+F`), and Outline / Backlinks / local graph panels.
-- GitHub-flavoured Markdown rendering (headings, lists, tables, task lists, code blocks, etc.).
-- Toolbar and keyboard shortcuts for common formatting, including highlight and fenced code insertion.
+- GitHub-flavoured Markdown rendering (headings, lists, tables, task lists, code blocks, etc.), Mermaid diagrams, and syntax highlighting in both the source editor and rendered code blocks.
+- Toolbar and keyboard shortcuts for common formatting, including highlight, images, tables, task lists, and fenced code insertion.
 - Outside a folder, drafts always autosave to `localStorage` and **Save** downloads a copy. Opened writable folders add an **Autosave to disk** toggle; when disabled, changes stay local until Save and unsaved files are protected on tab/browser close.
 - Create a Markdown file in the selected Explorer folder with the **+** button when folder write permission is available.
-- Syntax-highlighted code blocks powered by Highlight.js.
+- Open Markdown, plain-text, or HTML files (HTML is converted to Markdown), or drag and drop a file into the workspace. Rich-text paste is converted to Markdown where possible.
 - Copy rendered HTML, export standalone HTML, or print to PDF.
 - Light/dark themes and toast notifications for key actions.
 - Autosave status with a final save on browser background/close, plus confirmation before permanently deleting a draft.
@@ -39,10 +39,10 @@ git clone https://github.com/<your-account>/<your-repo>.git
 ### 2. Launch the Editor
 
 1. Open the extracted folder.
-2. Double-click `index.html`, or drag it into a modern browser (Edge, Chrome, Safari).
+2. Keep the `vendor/` folder alongside `index.html`, then double-click `index.html` or drag it into a modern browser (Edge, Chrome, Safari).
 3. Start typing in the Markdown pane; the preview updates automatically. Use **Visual** in the view switcher to write directly in the rendered document, or **Split** to see both representations.
 
-The app runs locally—no server is required. For best results in Edge/Chrome, allow the File System Access prompt when saving so the editor can write directly to disk. Safari users get automatic download fallbacks.
+The app runs locally—no server is required. To edit a folder’s files directly in Edge or Chrome, choose **Open Folder** and allow its permission prompt. Safari and other browsers use the available file-picker and download fallbacks.
 
 Keyboard Shortcuts
 -------------------
@@ -52,7 +52,9 @@ Keyboard Shortcuts
 - **Heading** `Ctrl/⌘ + 1`
 - **Code Block** `Ctrl/⌘ + \``
 - **Link** `Ctrl/⌘ + K`
+- **Save** `Ctrl/⌘ + S`
 - **Undo** `Ctrl/⌘ + Z` (also available via the toolbar)
+- **Redo** `Ctrl/⌘ + Shift + Z` or `Ctrl/⌘ + Y`
 - **Quick Switcher** `Ctrl/⌘ + O` (when a folder vault is open)
 - **Command Palette** `Ctrl/⌘ + P`
 - **Vault Search** `Ctrl/⌘ + Shift + F`
@@ -70,7 +72,8 @@ Project Structure
 
 - `index.html` – Main page with layout and script includes.
 - `styles.css` – App and preview styling (light/dark themes, typography, etc.).
-- `app.js` – Editor logic: autosave, toolbar formatting, file handling, syntax highlighting.
+- `app.js` – Editor logic: workspace and vault features, editing and preview, persistence, file handling, and export.
+- `vendor/` – Offline copies of Marked, DOMPurify, Highlight.js, Mermaid, Turndown, and preview styles.
 - `prd.md` – Product requirements reference.
 
 Development Notes
