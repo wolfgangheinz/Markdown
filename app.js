@@ -1,5 +1,6 @@
 (() => {
   const editor = document.getElementById('editor');
+  const editorSyntax = document.querySelector('.editor-syntax code');
   const preview = document.getElementById('preview');
   const divider = document.querySelector('.divider');
   const explorerDivider = document.querySelector('.explorer-divider');
@@ -808,7 +809,10 @@
   }
 
   function bindSynchronizedScrolling() {
-    editor.addEventListener('scroll', () => synchronizeScroll(editor, previewPane));
+    editor.addEventListener('scroll', () => {
+      synchronizeEditorSyntaxScroll();
+      synchronizeScroll(editor, previewPane);
+    });
     previewPane.addEventListener('scroll', () => synchronizeScroll(previewPane, editor));
   }
 
@@ -1006,6 +1010,7 @@
   }
 
   function updatePreview() {
+    updateEditorSyntax();
     const text = (editor.value || '').replace(/\r\n?/g, '\n').replace(/[\u2028\u2029]/g, '\n');
     const html = marked.parse(splitYamlFrontmatter(text).content);
     const clean = DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
@@ -1020,6 +1025,59 @@
       });
     }
     enforceSafeLinks();
+  }
+
+  function updateEditorSyntax() {
+    if (!editorSyntax) {
+      return;
+    }
+    editorSyntax.innerHTML = highlightMarkdown(editor.value || '');
+    synchronizeEditorSyntaxScroll();
+  }
+
+  function synchronizeEditorSyntaxScroll() {
+    if (editorSyntax) {
+      editorSyntax.style.transform = `translate(${-editor.scrollLeft}px, ${-editor.scrollTop}px)`;
+    }
+  }
+
+  function escapeSyntaxHtml(value) {
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function highlightMarkdownInline(value) {
+    return value.replace(/(`[^`]*`)|(\*\*|__)(.+?)\2|(\*|_)([^*_]+?)\4|(~~)(.+?)\6|(==)(.+?)\8|(!?\[[^\]]*\]\([^)]*\))/g,
+      (match, code, strongMarker, strongText, emphasisMarker, emphasisText, strikeMarker, strikeText, highlightMarker, highlightText, link) => {
+        if (code) return `<span class="syntax-code">${code}</span>`;
+        if (strongMarker) return `<span class="syntax-marker">${strongMarker}</span><span class="syntax-strong">${strongText}</span><span class="syntax-marker">${strongMarker}</span>`;
+        if (emphasisMarker) return `<span class="syntax-marker">${emphasisMarker}</span><span class="syntax-emphasis">${emphasisText}</span><span class="syntax-marker">${emphasisMarker}</span>`;
+        if (strikeMarker) return `<span class="syntax-marker">${strikeMarker}</span><span class="syntax-emphasis">${strikeText}</span><span class="syntax-marker">${strikeMarker}</span>`;
+        if (highlightMarker) return `<span class="syntax-marker">${highlightMarker}</span><span class="syntax-highlight">${highlightText}</span><span class="syntax-marker">${highlightMarker}</span>`;
+        return `<span class="syntax-link">${link}</span>`;
+      });
+  }
+
+  function highlightMarkdown(markdown) {
+    let inCodeBlock = false;
+    return markdown.replace(/\r\n?/g, '\n').split('\n').map((line) => {
+      const escaped = escapeSyntaxHtml(line);
+      if (/^\s*```/.test(line)) {
+        inCodeBlock = !inCodeBlock;
+        return `<span class="syntax-marker">${escaped}</span>`;
+      }
+      if (inCodeBlock) return `<span class="syntax-code-block">${escaped}</span>`;
+      if (/^\s*&lt;!--/.test(escaped)) return `<span class="syntax-comment">${escaped}</span>`;
+      const heading = escaped.match(/^(\s*)(#{1,6})(\s+)(.*)$/);
+      if (heading) return `${heading[1]}<span class="syntax-marker">${heading[2]}</span>${heading[3]}<span class="syntax-heading">${highlightMarkdownInline(heading[4])}</span>`;
+      const list = escaped.match(/^(\s*)((?:[-+*])|(?:\d+[.)]))(\s+)(.*)$/);
+      if (list) return `${list[1]}<span class="syntax-list-marker">${list[2]}</span>${list[3]}${highlightMarkdownInline(list[4])}`;
+      const quote = escaped.match(/^(\s*)(&gt;)(\s?)(.*)$/);
+      if (quote) return `${quote[1]}<span class="syntax-marker">${quote[2]}</span>${quote[3]}${highlightMarkdownInline(quote[4])}`;
+      return highlightMarkdownInline(escaped);
+    }).join('\n');
   }
 
   function isVisualMode() {

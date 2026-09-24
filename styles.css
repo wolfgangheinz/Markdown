@@ -10,6 +10,13 @@
   --pane-bg: #ffffff;
   --code-bg: #f6f8fa;
   --code-fg: #24292f;
+  --editor-fg: #24292f;
+  --syntax-markup: #af00db;
+  --syntax-heading: #0451a5;
+  --syntax-link: #0070c1;
+  --syntax-code: #a31515;
+  --syntax-comment: #008000;
+  --syntax-highlight: #795e26;
   --explorer-width: 240px;
 }
 
@@ -24,6 +31,13 @@
   --pane-bg: #161b22;
   --code-bg: #161b22;
   --code-fg: #e6edf3;
+  --editor-fg: #d4d4d4;
+  --syntax-markup: #c586c0;
+  --syntax-heading: #4fc1ff;
+  --syntax-link: #569cd6;
+  --syntax-code: #ce9178;
+  --syntax-comment: #6a9955;
+  --syntax-highlight: #dcdcaa;
 }
 
 * {
@@ -534,20 +548,61 @@ body.resizing-explorer {
   min-width: 0;
 }
 
+.editor-pane {
+  position: relative;
+}
+
+.editor-syntax,
 .editor-pane textarea {
-  border: none;
-  background: transparent;
-  color: inherit;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-  font-size: 0.95rem;
-  padding: 1rem;
+  position: absolute;
+  inset: 0;
   width: 100%;
+  margin: 0;
+  padding: 8px 12px;
+  border: 0;
+  font-family: Menlo, Monaco, "Courier New", monospace;
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 20px;
+  tab-size: 4;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.editor-syntax {
+  z-index: 0;
+  overflow: hidden;
+  color: var(--editor-fg);
+  pointer-events: none;
+}
+
+.editor-syntax code {
+  display: block;
+  font: inherit;
+}
+
+.editor-pane textarea {
+  background: transparent;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--editor-fg);
+  z-index: 1;
   resize: none;
   outline: none;
   overflow: auto;
-  line-height: 1.55;
-  white-space: pre-wrap;
 }
+
+.syntax-marker { color: var(--syntax-markup); }
+.syntax-heading { color: var(--syntax-heading); font-weight: 700; }
+.syntax-list-marker { color: var(--syntax-markup); }
+.syntax-strong { color: var(--editor-fg); font-weight: 700; }
+.syntax-emphasis { color: var(--editor-fg); font-style: italic; }
+.syntax-link { color: var(--syntax-link); }
+.syntax-code,
+.syntax-code-block { color: var(--syntax-code); }
+.syntax-comment { color: var(--syntax-comment); }
+.syntax-highlight { color: var(--syntax-highlight); font-weight: 700; }
 
 .preview-pane {
   overflow: auto;
