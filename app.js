@@ -1,5 +1,6 @@
 (() => {
   const editor = document.getElementById('editor');
+  const editorSyntax = document.querySelector('.editor-syntax code');
   const preview = document.getElementById('preview');
   const divider = document.querySelector('.divider');
   const explorerDivider = document.querySelector('.explorer-divider');
@@ -15,9 +16,10 @@
   const explorerEmptyMessage = document.querySelector('.file-explorer__empty-message');
   const explorerReconnect = document.querySelector('.file-explorer__reconnect');
   const explorerOpenFolder = document.querySelector('.file-explorer__open-folder');
+  const explorerNewFile = document.querySelector('.file-explorer__new-file');
   const explorerToggles = document.querySelectorAll('[data-action="toggleExplorer"]');
   const main = document.querySelector('.app-main');
-  const responsiveToggle = document.querySelectorAll('.responsive-toggle button');
+  const responsiveToggle = document.querySelectorAll('.view-toggle button');
   const root = document.documentElement;
   const editorPane = document.querySelector('.editor-pane');
   const previewPane = document.querySelector('.preview-pane');
@@ -92,8 +94,14 @@
   const folderPathsByDocumentId = new Map();
   let openedFolder = null;
   let activeFolderPath = null;
+  // Unlike activeFolderPath (the open file), this is the directory that receives
+  // newly created files. Keeping them separate lets a user select a folder
+  // without changing the document currently being edited.
+  let selectedFolderPath = null;
   let rememberedDirectoryHandle = null;
   let pendingFolderReconnectState = null;
+  let visualSyncTimer = 0;
+  let isSyncingVisual = false;
 
   marked.setOptions({
     gfm: true,
@@ -138,6 +146,7 @@
   bindPreviewLinks();
   bindExplorerControls();
   bindSynchronizedScrolling();
+  bindVisualEditor();
   restoreFolderConnection();
 
   function restoreTheme() {
@@ -171,12 +180,7 @@
 
   function restoreView() {
     const stored = localStorage.getItem(VIEW_KEY);
-    if (window.innerWidth <= 960 && stored === 'preview') {
-      main.classList.add('show-preview');
-      setResponsivePressed('preview');
-    } else {
-      setResponsivePressed('editor');
-    }
+    setEditorView(stored === 'wysiwyg' ? 'wysiwyg' : stored === 'preview' ? 'preview' : stored === 'editor' ? 'editor' : 'split', false);
   }
 
   function restoreDocuments() {
@@ -582,14 +586,24 @@
       return;
     }
     toolbars.forEach((bar) => {
+      bar.addEventListener('mousedown', (event) => {
+        if (isVisualMode() && event.target.closest('button[data-action]')) {
+          // Keep the document selection intact while a visual formatting button is clicked.
+          event.preventDefault();
+        }
+      });
       bar.addEventListener('click', (event) => {
         const button = event.target.closest('button[data-action]');
         if (!button) {
           return;
         }
         const action = button.dataset.action;
-        applyFormatting(action);
-        editor.focus();
+        if (isVisualMode()) {
+          applyVisualFormatting(action);
+        } else {
+          applyFormatting(action);
+          editor.focus();
+        }
       });
     });
   }
@@ -642,6 +656,10 @@
           openDraftManager();
           break;
       }
+      const menu = button.closest('.app-menu');
+      if (menu) {
+        menu.open = false;
+      }
     });
 
     fileInput.addEventListener('change', async (event) => {
@@ -672,10 +690,17 @@
     }
     explorerTree.addEventListener('click', (event) => {
       const fileButton = event.target.closest('button[data-folder-path]');
-      if (!fileButton) {
+      if (fileButton) {
+        openFolderFile(fileButton.dataset.folderPath);
         return;
       }
-      openFolderFile(fileButton.dataset.folderPath);
+      const directorySummary = event.target.closest('summary[data-directory-path]');
+      if (!directorySummary) {
+        return;
+      }
+      selectedFolderPath = directorySummary.dataset.directoryPath;
+      syncFolderExplorerSelection();
+      saveFolderState();
     });
     if (explorerReconnect) {
       explorerReconnect.addEventListener('click', reconnectFolder);
@@ -692,6 +717,9 @@
       }
       button.addEventListener('click', toggleExplorer);
     });
+    if (explorerNewFile) {
+      explorerNewFile.addEventListener('click', createFolderFile);
+    }
     if (!explorerDivider || !explorer) {
       return;
     }
@@ -781,7 +809,10 @@
   }
 
   function bindSynchronizedScrolling() {
-    editor.addEventListener('scroll', () => synchronizeScroll(editor, previewPane));
+    editor.addEventListener('scroll', () => {
+      synchronizeEditorSyntaxScroll();
+      synchronizeScroll(editor, previewPane);
+    });
     previewPane.addEventListener('scroll', () => synchronizeScroll(previewPane, editor));
   }
 
@@ -927,30 +958,38 @@
   function bindResponsiveToggle() {
     responsiveToggle.forEach((button) => {
       button.addEventListener('click', () => {
-        const view = button.dataset.view;
-        if (view === 'preview') {
-          main.classList.add('show-preview');
-        } else {
-          main.classList.remove('show-preview');
-        }
-        sessionStorage.setItem(VIEW_KEY, view);
-        localStorage.setItem(VIEW_KEY, view);
-        setResponsivePressed(view);
+        setEditorView(button.dataset.view);
       });
     });
 
     window.addEventListener('resize', () => {
-      if (window.innerWidth > 960) {
-        main.classList.remove('show-preview');
-        setResponsivePressed('editor');
-      } else {
-        const stored = localStorage.getItem(VIEW_KEY);
-        if (stored === 'preview') {
-          main.classList.add('show-preview');
-          setResponsivePressed('preview');
-        }
-      }
+      const stored = localStorage.getItem(VIEW_KEY) || 'split';
+      setEditorView(stored, false);
     });
+  }
+
+  function setEditorView(view, persist = true) {
+    const chosen = ['split', 'wysiwyg', 'editor', 'preview'].includes(view) ? view : 'split';
+    const wasVisual = isVisualMode();
+    if (wasVisual && chosen !== 'wysiwyg') {
+      syncVisualToMarkdown();
+    }
+    main.classList.toggle('wysiwyg-mode', chosen === 'wysiwyg');
+    main.classList.toggle('markdown-only', chosen === 'editor');
+    main.classList.toggle('show-preview', chosen === 'preview');
+    preview.contentEditable = chosen === 'wysiwyg' ? 'true' : 'false';
+    preview.setAttribute('role', chosen === 'wysiwyg' ? 'textbox' : 'article');
+    preview.setAttribute('aria-label', chosen === 'wysiwyg' ? 'Visual Markdown editor' : 'Markdown preview');
+    preview.setAttribute('aria-live', chosen === 'wysiwyg' ? 'off' : 'polite');
+    if (persist) {
+      sessionStorage.setItem(VIEW_KEY, chosen);
+      localStorage.setItem(VIEW_KEY, chosen);
+    }
+    setResponsivePressed(chosen);
+    if (chosen === 'wysiwyg') {
+      updatePreview();
+      window.requestAnimationFrame(() => preview.focus());
+    }
   }
 
   function setResponsivePressed(view) {
@@ -959,9 +998,21 @@
     });
   }
 
+  function splitYamlFrontmatter(markdown) {
+    const match = markdown.match(/^(?:\uFEFF)?---[ \t]*\n[\s\S]*?\n(?:---|\.\.\.)[ \t]*(?:\n|$)/);
+    if (!match) {
+      return { frontmatter: '', content: markdown };
+    }
+    return {
+      frontmatter: match[0],
+      content: markdown.slice(match[0].length)
+    };
+  }
+
   function updatePreview() {
+    updateEditorSyntax();
     const text = (editor.value || '').replace(/\r\n?/g, '\n').replace(/[\u2028\u2029]/g, '\n');
-    const html = marked.parse(text);
+    const html = marked.parse(splitYamlFrontmatter(text).content);
     const clean = DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
     preview.innerHTML = clean;
     assignHeadingIds();
@@ -974,6 +1025,198 @@
       });
     }
     enforceSafeLinks();
+  }
+
+  function updateEditorSyntax() {
+    if (!editorSyntax) {
+      return;
+    }
+    editorSyntax.innerHTML = highlightMarkdown(editor.value || '');
+    synchronizeEditorSyntaxScroll();
+  }
+
+  function synchronizeEditorSyntaxScroll() {
+    if (editorSyntax) {
+      editorSyntax.style.transform = `translate(${-editor.scrollLeft}px, ${-editor.scrollTop}px)`;
+    }
+  }
+
+  function escapeSyntaxHtml(value) {
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function highlightMarkdownInline(value) {
+    return value.replace(/(`[^`]*`)|(\*\*|__)(.+?)\2|(\*|_)([^*_]+?)\4|(~~)(.+?)\6|(==)(.+?)\8|(!?\[[^\]]*\]\([^)]*\))/g,
+      (match, code, strongMarker, strongText, emphasisMarker, emphasisText, strikeMarker, strikeText, highlightMarker, highlightText, link) => {
+        if (code) return `<span class="syntax-code">${code}</span>`;
+        if (strongMarker) return `<span class="syntax-marker">${strongMarker}</span><span class="syntax-strong">${strongText}</span><span class="syntax-marker">${strongMarker}</span>`;
+        if (emphasisMarker) return `<span class="syntax-marker">${emphasisMarker}</span><span class="syntax-emphasis">${emphasisText}</span><span class="syntax-marker">${emphasisMarker}</span>`;
+        if (strikeMarker) return `<span class="syntax-marker">${strikeMarker}</span><span class="syntax-emphasis">${strikeText}</span><span class="syntax-marker">${strikeMarker}</span>`;
+        if (highlightMarker) return `<span class="syntax-marker">${highlightMarker}</span><span class="syntax-highlight">${highlightText}</span><span class="syntax-marker">${highlightMarker}</span>`;
+        return `<span class="syntax-link">${link}</span>`;
+      });
+  }
+
+  function highlightMarkdown(markdown) {
+    let inCodeBlock = false;
+    return markdown.replace(/\r\n?/g, '\n').split('\n').map((line) => {
+      const escaped = escapeSyntaxHtml(line);
+      if (/^\s*```/.test(line)) {
+        inCodeBlock = !inCodeBlock;
+        return `<span class="syntax-marker">${escaped}</span>`;
+      }
+      if (inCodeBlock) return `<span class="syntax-code-block">${escaped}</span>`;
+      if (/^\s*&lt;!--/.test(escaped)) return `<span class="syntax-comment">${escaped}</span>`;
+      const heading = escaped.match(/^(\s*)(#{1,6})(\s+)(.*)$/);
+      if (heading) return `${heading[1]}<span class="syntax-marker">${heading[2]}</span>${heading[3]}<span class="syntax-heading">${highlightMarkdownInline(heading[4])}</span>`;
+      const list = escaped.match(/^(\s*)((?:[-+*])|(?:\d+[.)]))(\s+)(.*)$/);
+      if (list) return `${list[1]}<span class="syntax-list-marker">${list[2]}</span>${list[3]}${highlightMarkdownInline(list[4])}`;
+      const quote = escaped.match(/^(\s*)(&gt;)(\s?)(.*)$/);
+      if (quote) return `${quote[1]}<span class="syntax-marker">${quote[2]}</span>${quote[3]}${highlightMarkdownInline(quote[4])}`;
+      return highlightMarkdownInline(escaped);
+    }).join('\n');
+  }
+
+  function isVisualMode() {
+    return main.classList.contains('wysiwyg-mode');
+  }
+
+  function bindVisualEditor() {
+    preview.addEventListener('input', () => {
+      if (isVisualMode() && !isSyncingVisual) {
+        queueVisualSync();
+      }
+    });
+    preview.addEventListener('keydown', (event) => {
+      if (!isVisualMode()) {
+        return;
+      }
+      const isMac = navigator.platform.toUpperCase().includes('MAC');
+      const modKey = isMac ? event.metaKey : event.ctrlKey;
+      if (!modKey) {
+        return;
+      }
+      const shortcuts = { b: 'bold', i: 'italic', k: 'link' };
+      const action = shortcuts[event.key.toLowerCase()];
+      if (action) {
+        event.preventDefault();
+        applyVisualFormatting(action);
+      }
+    });
+    preview.addEventListener('blur', () => {
+      if (isVisualMode()) {
+        syncVisualToMarkdown();
+      }
+    });
+  }
+
+  function queueVisualSync() {
+    window.clearTimeout(visualSyncTimer);
+    visualSyncTimer = window.setTimeout(() => {
+      visualSyncTimer = 0;
+      syncVisualToMarkdown();
+    }, 550);
+  }
+
+  function getVisualCaretOffset() {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || !preview.contains(selection.anchorNode)) {
+      return null;
+    }
+    const range = selection.getRangeAt(0).cloneRange();
+    range.selectNodeContents(preview);
+    range.setEnd(selection.anchorNode, selection.anchorOffset);
+    return range.toString().length;
+  }
+
+  function restoreVisualCaret(offset) {
+    if (typeof offset !== 'number') {
+      return;
+    }
+    const walker = document.createTreeWalker(preview, NodeFilter.SHOW_TEXT);
+    let remaining = offset;
+    let node = walker.nextNode();
+    while (node) {
+      if (remaining <= node.textContent.length) {
+        const range = document.createRange();
+        range.setStart(node, remaining);
+        range.collapse(true);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return;
+      }
+      remaining -= node.textContent.length;
+      node = walker.nextNode();
+    }
+  }
+
+  function syncVisualToMarkdown() {
+    window.clearTimeout(visualSyncTimer);
+    visualSyncTimer = 0;
+    if (!isVisualMode() || !turndownService) {
+      return;
+    }
+    const caretOffset = getVisualCaretOffset();
+    let markdown;
+    try {
+      markdown = turndownService.turndown(preview.innerHTML).replace(/\r\n?/g, '\n');
+    } catch (error) {
+      console.warn('Visual editor conversion failed', error);
+      return;
+    }
+    const frontmatter = splitYamlFrontmatter(editor.value).frontmatter;
+    markdown = frontmatter + markdown;
+    if (markdown === editor.value) {
+      return;
+    }
+    isSyncingVisual = true;
+    editor.value = markdown;
+    const doc = getCurrentDocument();
+    if (doc) {
+      doc.content = markdown;
+      doc.updatedAt = Date.now();
+    }
+    scheduleAutosave();
+    updatePreview();
+    isSyncingVisual = false;
+    preview.focus();
+    restoreVisualCaret(caretOffset);
+  }
+
+  function applyVisualFormatting(action) {
+    preview.focus();
+    const command = (name, value = null) => document.execCommand(name, false, value);
+    switch (action) {
+      case 'undo': command('undo'); break;
+      case 'redo': command('redo'); break;
+      case 'bold': command('bold'); break;
+      case 'italic': command('italic'); break;
+      case 'strikethrough': command('strikeThrough'); break;
+      case 'highlight': command('hiliteColor', '#fff2a8'); break;
+      case 'heading': command('formatBlock', 'h1'); break;
+      case 'ul': command('insertUnorderedList'); break;
+      case 'ol': command('insertOrderedList'); break;
+      case 'quote': command('formatBlock', 'blockquote'); break;
+      case 'inlineCode': command('insertHTML', `<code>${escapeHtml(window.getSelection().toString() || 'code')}</code>`); break;
+      case 'code': command('insertHTML', '<pre><code>code</code></pre>'); break;
+      case 'link': {
+        const url = window.prompt('Enter URL', 'https://');
+        if (url) command('createLink', url);
+        break;
+      }
+      case 'image': {
+        const url = window.prompt('Enter image URL', 'https://');
+        if (url) command('insertImage', url);
+        break;
+      }
+      case 'table': command('insertHTML', '<table><thead><tr><th>Heading</th><th>Heading</th></tr></thead><tbody><tr><td>Text</td><td>Text</td></tr></tbody></table><p><br></p>'); break;
+      default: return;
+    }
+    queueVisualSync();
   }
 
   function assignHeadingIds() {
@@ -1625,6 +1868,9 @@
     activeFolderPath = folderPathsByDocumentId.get(id)
       || (openedFolder && doc.folderId === openedFolder.id ? doc.folderPath : null)
       || null;
+    if (activeFolderPath) {
+      selectedFolderPath = getFolderParentPath(activeFolderPath);
+    }
     editor.value = doc.content || '';
     clearCommandHistory();
     updatePreview();
@@ -1633,7 +1879,7 @@
     updateDocumentTitle();
     syncFolderExplorerSelection();
     if (options.focus !== false) {
-      editor.focus();
+      (isVisualMode() ? preview : editor).focus();
     }
     if (options.render !== false) {
       renderDraftList();
@@ -2294,6 +2540,7 @@
     const folderId = options.id || generateFolderId();
     openedFolder = { id: folderId, name, handle: directoryHandle, root: rootNode };
     activeFolderPath = null;
+    selectedFolderPath = '';
     folderEntries.clear();
     folderPathLookup.clear();
     folderDocumentIds.clear();
@@ -2420,6 +2667,13 @@
     if (explorerOpenFolder) {
       explorerOpenFolder.hidden = false;
     }
+    if (explorerNewFile) {
+      const canCreate = Boolean(openedFolder && openedFolder.handle);
+      explorerNewFile.disabled = !canCreate;
+      explorerNewFile.title = canCreate
+        ? 'Create Markdown file in the selected folder'
+        : 'Open the folder with write permission to create files';
+    }
     if (!openedFolder) {
       return;
     }
@@ -2442,6 +2696,15 @@
         button.removeAttribute('aria-current');
       }
     });
+    explorerTree.querySelectorAll('summary[data-directory-path]').forEach((summary) => {
+      const isSelected = summary.dataset.directoryPath === selectedFolderPath;
+      summary.classList.toggle('is-active', isSelected);
+      if (isSelected) {
+        summary.setAttribute('aria-current', 'true');
+      } else {
+        summary.removeAttribute('aria-current');
+      }
+    });
   }
 
   function createTreeNode(node) {
@@ -2449,6 +2712,7 @@
     if (node.type === 'directory') {
       const details = document.createElement('details');
       const summary = document.createElement('summary');
+      summary.dataset.directoryPath = node.path;
       summary.textContent = node.name;
       const list = document.createElement('ul');
       node.children.forEach((child) => list.appendChild(createTreeNode(child)));
@@ -2467,6 +2731,104 @@
     }
     item.appendChild(button);
     return item;
+  }
+
+  function getFolderParentPath(path) {
+    const normalized = normalizeFolderPath(path || '');
+    const slash = normalized.lastIndexOf('/');
+    return slash === -1 ? '' : normalized.slice(0, slash);
+  }
+
+  function findFolderNode(node, path) {
+    if (!node || node.type !== 'directory') {
+      return null;
+    }
+    if (node.path === path) {
+      return node;
+    }
+    for (let index = 0; index < node.children.length; index += 1) {
+      const match = findFolderNode(node.children[index], path);
+      if (match) {
+        return match;
+      }
+    }
+    return null;
+  }
+
+  async function getDirectoryHandleForPath(path) {
+    if (!openedFolder || !openedFolder.handle) {
+      return null;
+    }
+    let handle = openedFolder.handle;
+    const parts = normalizeFolderPath(path || '').split('/').filter(Boolean);
+    for (let index = 0; index < parts.length; index += 1) {
+      handle = await handle.getDirectoryHandle(parts[index]);
+    }
+    return handle;
+  }
+
+  async function createFolderFile() {
+    if (!openedFolder || !openedFolder.handle) {
+      showToast('Reopen the folder with write permission to create files');
+      return;
+    }
+    const rawName = window.prompt('New Markdown file name', 'untitled.md');
+    if (rawName === null) {
+      return;
+    }
+    const trimmedName = rawName.trim();
+    if (!trimmedName || ILLEGAL_FILENAME.test(trimmedName) || trimmedName === '.' || trimmedName === '..') {
+      showToast('Enter a valid file name');
+      return;
+    }
+    const fileName = /\.(?:md|markdown)$/i.test(trimmedName) ? trimmedName : `${trimmedName}.md`;
+    const parentPath = selectedFolderPath !== null
+      ? selectedFolderPath
+      : getFolderParentPath(activeFolderPath);
+    const path = normalizeFolderPath(parentPath ? `${parentPath}/${fileName}` : fileName);
+    if (folderPathLookup.has(path.toLowerCase())) {
+      showToast('A file with that name already exists');
+      return;
+    }
+
+    try {
+      const directoryHandle = await getDirectoryHandleForPath(parentPath);
+      const handle = await directoryHandle.getFileHandle(fileName, { create: true });
+      const writable = await handle.createWritable();
+      await writable.write('');
+      await writable.close();
+
+      const parentNode = findFolderNode(openedFolder.root, parentPath);
+      if (!parentNode) {
+        throw new Error('Folder location no longer exists');
+      }
+      const entry = { type: 'file', name: fileName, path, handle };
+      parentNode.children.push(entry);
+      sortFolderChildren(parentNode);
+      folderEntries.set(path, entry);
+      folderPathLookup.set(path.toLowerCase(), path);
+
+      const documentId = createDocument(fileName, '', {
+        makeCurrent: false,
+        persist: false,
+        render: false,
+        focus: false
+      });
+      const doc = documents[documentId];
+      doc.folderId = openedFolder.id;
+      doc.folderPath = path;
+      folderDocumentIds.set(path, documentId);
+      folderPathsByDocumentId.set(documentId, path);
+      fileHandles.set(documentId, handle);
+      renderFolderExplorer();
+      setCurrentDocument(documentId, { focus: true });
+      saveFolderState();
+      saveDocumentsToStorage();
+      showToast(`Created ${fileName}`);
+    } catch (error) {
+      console.error(error);
+      showToast('Unable to create file in this folder');
+    }
   }
 
   async function triggerOpen() {
