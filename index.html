@@ -14,12 +14,17 @@
       <label class="sr-only" for="document-title">Document title</label>
       <input type="text" id="document-title" class="document-title-input" value="Untitled" maxlength="120" aria-describedby="document-title-help">
       <span id="document-title-help" class="sr-only">Press Enter or leave the field to save the new name.</span>
+      <span id="save-status" class="save-status" role="status" aria-live="polite">Saved locally</span>
+      <button type="button" class="autosave-toggle" data-folder-autosave hidden aria-label="Autosave to disk" aria-pressed="true" title="Autosave to disk">
+        <span class="autosave-toggle__local" aria-hidden="true">Local</span>
+        <span class="autosave-toggle__disk" aria-hidden="true">Disk</span>
+      </button>
     </div>
     <div class="header-groups">
       <div class="pane-toolbar editor-toolbar" role="toolbar" aria-label="Text formatting">
         <div class="toolbar-group" role="group" aria-label="History">
-          <button type="button" class="tool-btn tool-btn--icon" data-action="undo" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo">↶</button>
-          <button type="button" class="tool-btn tool-btn--icon" data-action="redo" title="Redo (Ctrl/Cmd+Shift+Z)" aria-label="Redo">↷</button>
+          <button type="button" class="tool-btn tool-btn--icon" data-action="undo" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 14-5-5 5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v1"/></svg></button>
+          <button type="button" class="tool-btn tool-btn--icon" data-action="redo" title="Redo (Ctrl/Cmd+Shift+Z)" aria-label="Redo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0-5 5v1"/></svg></button>
         </div>
         <div class="toolbar-group" role="group" aria-label="Text style">
           <button type="button" class="tool-btn tool-btn--icon tool-btn--bold" data-action="bold" title="Bold (Ctrl/Cmd+B)" aria-label="Bold">B</button>
@@ -32,10 +37,11 @@
           <button type="button" class="tool-btn" data-action="heading" title="Heading (Ctrl/Cmd+1)" aria-label="Heading">Heading</button>
           <button type="button" class="tool-btn tool-btn--icon" data-action="ul" title="Bulleted list" aria-label="Bulleted list">☷</button>
           <button type="button" class="tool-btn tool-btn--icon" data-action="ol" title="Numbered list" aria-label="Numbered list">☷₁</button>
+          <button type="button" class="tool-btn tool-btn--icon" data-action="task" title="Task list" aria-label="Task list">☑</button>
           <button type="button" class="tool-btn tool-btn--icon" data-action="quote" title="Quote" aria-label="Quote">❝</button>
         </div>
         <div class="toolbar-group" role="group" aria-label="Insert">
-          <button type="button" class="tool-btn tool-btn--icon" data-action="link" title="Insert link (Ctrl/Cmd+K)" aria-label="Insert link">↗</button>
+          <button type="button" class="tool-btn tool-btn--icon" data-action="link" title="Insert link (Ctrl/Cmd+K)" aria-label="Insert link"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.07.07l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.07-.07l-3 3A5 5 0 0 0 11 21l1.71-1.71"/></svg></button>
           <button type="button" class="tool-btn tool-btn--icon" data-action="image" title="Insert image" aria-label="Insert image">▧</button>
           <button type="button" class="tool-btn tool-btn--icon" data-action="table" title="Insert table" aria-label="Insert table">▦</button>
           <button type="button" class="tool-btn tool-btn--icon" data-action="code" title="Code block" aria-label="Code block">{ }</button>
@@ -55,17 +61,17 @@
         <button type="button" class="file-btn" data-action="copyRich" title="Copy Rendered HTML" aria-label="Copy rendered HTML">Copy Rich</button>
         <button type="button" class="file-btn" data-action="clearAutosave" title="Clear Autosave" aria-label="Clear autosaved draft">Clear Draft</button>
         <button type="button" class="file-btn" data-action="manageDrafts" title="Manage drafts" aria-label="Manage autosaved drafts">Drafts</button>
-        <button type="button" class="file-btn" data-action="livePreview" title="Toggle Live Preview" aria-label="Toggle Live Preview">Live Preview</button>
+        <button type="button" class="file-btn" data-action="livePreview" title="Toggle visual editor" aria-label="Toggle visual editor">Visual Editor</button>
         </div>
       </details>
-      <button type="button" class="theme-toggle" aria-label="Toggle light or dark theme" aria-pressed="false">
-        <span class="icon sun" aria-hidden="true">☀</span>
-        <span class="icon moon" aria-hidden="true">☾</span>
-      </button>
     </div>
+    <button type="button" class="theme-toggle" aria-label="Toggle light or dark theme" aria-pressed="false">
+      <span class="icon sun" aria-hidden="true">☀</span>
+      <span class="icon moon" aria-hidden="true">☾</span>
+    </button>
     <div class="responsive-toggle view-toggle" role="group" aria-label="Editor view">
       <button type="button" data-view="split" aria-pressed="true">Split</button>
-      <button type="button" data-view="live" aria-pressed="false">Visual</button>
+      <button type="button" data-view="wysiwyg" aria-pressed="false">Visual</button>
       <button type="button" data-view="editor" aria-pressed="false">Markdown</button>
       <button type="button" data-view="preview" aria-pressed="false">Preview</button>
     </div>
@@ -89,13 +95,13 @@
     <div class="explorer-divider" role="separator" aria-orientation="vertical" aria-label="Resize Explorer" aria-valuemin="140" aria-valuemax="480" aria-valuenow="240" tabindex="0"></div>
     <section class="workspace-center" aria-label="Workspace">
       <div class="workspace-tabs" role="tablist" aria-label="Open notes"></div>
-      <div class="workspace-panes">
+      <div class="workspace-panes" id="workspace-panes" role="tabpanel">
     <section class="pane editor-pane" aria-label="Markdown editor">
       <pre class="editor-syntax" aria-hidden="true"><code></code></pre>
-      <textarea id="editor" spellcheck="false" aria-label="Markdown editor"></textarea>
+      <textarea id="editor" spellcheck="true" aria-label="Markdown editor"></textarea>
     </section>
     <div class="divider" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize editor and preview panels"></div>
-    <section class="pane preview-pane" aria-label="Markdown preview" aria-live="polite">
+    <section class="pane preview-pane" aria-label="Markdown preview" aria-live="off">
       <article id="preview" class="markdown-body"></article>
     </section>
       </div>
@@ -107,9 +113,10 @@
         <button type="button" data-context="graph" role="tab" aria-selected="false">Graph</button>
         <button type="button" data-action="toggleContext" class="context-sidebar__toggle" aria-label="Hide note context">›</button>
       </div>
-      <section class="context-panel" data-panel="outline" role="tabpanel"><div class="context-panel__content" id="outline-panel"></div></section>
-      <section class="context-panel" data-panel="backlinks" role="tabpanel" hidden><div class="context-panel__content" id="backlinks-panel"></div></section>
-      <section class="context-panel" data-panel="graph" role="tabpanel" hidden><div class="context-panel__content graph-panel" id="graph-panel"></div></section>
+      <span class="context-sidebar__rail-label" aria-hidden="true">Outline</span>
+      <section class="context-panel" data-panel="outline" id="context-outline" role="tabpanel"><div class="context-panel__content" id="outline-panel"></div></section>
+      <section class="context-panel" data-panel="backlinks" id="context-backlinks" role="tabpanel" hidden><div class="context-panel__content" id="backlinks-panel"></div></section>
+      <section class="context-panel" data-panel="graph" id="context-graph" role="tabpanel" hidden><div class="context-panel__content graph-panel" id="graph-panel"></div></section>
     </aside>
   </main>
   <div class="toast" role="status" aria-live="polite" hidden></div>
