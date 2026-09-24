@@ -36,6 +36,7 @@
   const workspaceTabs = document.querySelector('.workspace-tabs');
   const workspacePanes = document.querySelector('.workspace-panes');
   const contextSidebar = document.querySelector('.context-sidebar');
+  const contextRailLabel = document.querySelector('.context-sidebar__rail-label');
   const workspaceModal = document.getElementById('workspace-modal');
   const workspaceQuery = document.getElementById('workspace-query');
   const workspaceResults = document.getElementById('workspace-results');
@@ -1340,20 +1341,32 @@
 
   function setContextPanel(name) {
     workspaceSession.context = ['outline', 'backlinks', 'graph'].includes(name) ? name : 'outline';
+    if (contextRailLabel) contextRailLabel.textContent = workspaceSession.context;
     document.querySelectorAll('[data-context]').forEach((button) => button.setAttribute('aria-selected', String(button.dataset.context === workspaceSession.context)));
     document.querySelectorAll('.context-panel').forEach((panel) => { panel.hidden = panel.dataset.panel !== workspaceSession.context; });
     persistWorkspaceSession(); renderContextPanels();
   }
 
   function toggleContextSidebar() {
-    workspaceSession.contextCollapsed = !workspaceSession.contextCollapsed; main.classList.toggle('context-collapsed', workspaceSession.contextCollapsed); persistWorkspaceSession();
+    workspaceSession.contextCollapsed = !workspaceSession.contextCollapsed;
+    renderContextSidebarState();
+    persistWorkspaceSession();
   }
 
   function renderContextPanels() {
-    main.classList.toggle('context-collapsed', workspaceSession.contextCollapsed);
+    renderContextSidebarState();
+    if (contextRailLabel) contextRailLabel.textContent = workspaceSession.context;
     document.querySelectorAll('[data-context]').forEach((button) => button.setAttribute('aria-selected', String(button.dataset.context === workspaceSession.context)));
     document.querySelectorAll('.context-panel').forEach((panel) => { panel.hidden = panel.dataset.panel !== workspaceSession.context; });
     renderOutline(); renderBacklinks(); renderGraph();
+  }
+
+  function renderContextSidebarState() {
+    main.classList.toggle('context-collapsed', workspaceSession.contextCollapsed);
+    document.querySelectorAll('[data-action="toggleContext"]').forEach((button) => {
+      button.textContent = workspaceSession.contextCollapsed ? '‹' : '›';
+      button.setAttribute('aria-label', workspaceSession.contextCollapsed ? 'Show note context' : 'Hide note context');
+    });
   }
 
   function renderOutline() {

@@ -351,6 +351,7 @@ body {
 .context-sidebar__tabs button { border:0; border-bottom:2px solid transparent; background:transparent; color:var(--fg); padding:.6rem .45rem; cursor:pointer; font:inherit; font-size:.8rem; }
 .context-sidebar__tabs button[aria-selected="true"] { border-color:var(--accent); color:var(--accent); }
 .context-sidebar__tabs .context-sidebar__toggle { margin-left:auto; font-size:1.1rem; }
+.context-sidebar__rail-label { display:none; }
 .context-panel__content { padding:.65rem; }
 .context-empty { color:color-mix(in srgb, var(--fg) 55%, transparent); font-size:.85rem; }
 .outline-item, .backlink-item { display:block; width:100%; border:0; background:transparent; color:var(--fg); text-align:left; padding:.35rem; border-radius:4px; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -375,9 +376,33 @@ body {
 .graph-modal__dialog header button { border:0; background:transparent; color:var(--fg); font-size:1.5rem; line-height:1; cursor:pointer; }
 .graph-modal__canvas { flex:1; min-height:0; padding:1rem; }
 .graph-modal__canvas .graph-svg { height:100%; min-height:0; }
-.app-main.context-collapsed .context-sidebar { flex-basis:38px; overflow:hidden; }
-.app-main.context-collapsed .context-sidebar__tabs { flex-direction:column; }
+.app-main.context-collapsed .context-sidebar { flex:0 0 42px; min-width:42px; max-width:42px; overflow:hidden; }
+.app-main.context-collapsed .context-sidebar__tabs { position:relative; display:block; height:44px; border-bottom:0; }
 .app-main.context-collapsed .context-sidebar__tabs button:not(.context-sidebar__toggle), .app-main.context-collapsed .context-panel { display:none; }
+.app-main.context-collapsed .context-sidebar__toggle {
+  position:absolute;
+  top:8px;
+  right:6px;
+  width:28px;
+  height:28px;
+  margin:0;
+  padding:0;
+  border:1px solid var(--border);
+  border-radius:0;
+  background:var(--pane-bg);
+  color:var(--fg);
+  line-height:1;
+}
+.app-main.context-collapsed .context-sidebar__rail-label {
+  display:block;
+  width:max-content;
+  margin:0 auto;
+  color:var(--fg);
+  font-size:.68rem;
+  letter-spacing:0;
+  text-transform:uppercase;
+  writing-mode:vertical-rl;
+}
 .workspace-modal { position:fixed; inset:0; z-index:30; display:grid; place-items:start center; padding-top:12vh; }
 .workspace-modal[hidden] { display:none; }
 .workspace-modal__backdrop { position:absolute; inset:0; background:rgba(15,23,42,.42); }
