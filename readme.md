@@ -6,7 +6,8 @@ A self-contained, browser-based Markdown editor designed for restricted environm
 Features
 --------
 - Compact grouped formatting toolbar, File menu, and Split / Visual / Markdown / Preview modes.
-- Local-vault workspace with persistent tabs, Quick Switcher (`Ctrl/⌘+O`), Command Palette (`Ctrl/⌘+P`), vault search (`Ctrl/⌘+Shift+F`), and Outline / Backlinks / local graph panels.
+- Local-vault workspace with persistent tabs, Quick Switcher (`Ctrl/⌘+O`), Command Palette (`Ctrl/⌘+P`), vault search (`Ctrl/⌘+Shift+F`), and Outline / Backlinks / folder graph panels.
+- Connected graph showing every Markdown note reachable from the current file through resolved Markdown and `[[wiki]]` links. Unrelated groups are hidden. Open it from the Graph panel or File menu to search, pan, zoom, focus a note, and open it. Labels stay readable as you zoom and are shown only where they fit. The graph stays entirely local.
 - GitHub-flavoured Markdown rendering (headings, lists, tables, task lists, code blocks, etc.), Mermaid diagrams, and syntax highlighting in both the source editor and rendered code blocks.
 - Toolbar and keyboard shortcuts for common formatting, including highlight, images, tables, task lists, and fenced code insertion.
 - Outside a folder, drafts always autosave to `localStorage` and **Save** downloads a copy. Opened writable folders add an **Autosave to disk** toggle; when disabled, changes stay local until Save and unsaved files are protected on tab/browser close.
@@ -73,6 +74,7 @@ Project Structure
 - `index.html` – Main page with layout and script includes.
 - `styles.css` – App and preview styling (light/dark themes, typography, etc.).
 - `app.js` – Editor logic: workspace and vault features, editing and preview, persistence, file handling, and export.
+- `graph.js` – Folder graph model and layout.
 - `vendor/` – Offline copies of Marked, DOMPurify, Highlight.js, Mermaid, Turndown, and preview styles.
 - `prd.md` – Product requirements reference.
 
@@ -80,6 +82,8 @@ Development Notes
 -----------------
 
 Everything is plain HTML/JS/CSS, so no build tooling is required. If you add third-party libraries (e.g. Mermaid for diagrams), prefer bundling the minified assets locally so the project remains fully offline.
+
+Run the graph model tests with `node --test tests/graph.test.js`.
 
 Contributing
 ------------
