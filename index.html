@@ -41,9 +41,9 @@
           <button type="button" class="tool-btn tool-btn--icon" data-action="code" title="Code block" aria-label="Code block">{ }</button>
         </div>
       </div>
-      <div class="pane-toolbar file-toolbar" role="group" aria-label="File and export actions">
-        <button type="button" class="file-btn" data-action="undo" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo">Undo</button>
-        <button type="button" class="file-btn" data-action="redo" title="Redo (Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y)" aria-label="Redo">Redo</button>
+      <details class="app-menu">
+        <summary aria-label="Document and export menu">••• <span>File</span></summary>
+        <div class="pane-toolbar file-toolbar" role="group" aria-label="File and export actions">
         <button type="button" class="file-btn" data-action="new" title="New document" aria-label="New document">New</button>
         <button type="button" class="file-btn" data-action="open" title="Open" aria-label="Open file">Open</button>
         <button type="button" class="file-btn" data-action="openFolder" title="Open folder" aria-label="Open folder">Open Folder</button>
@@ -56,15 +56,17 @@
         <button type="button" class="file-btn" data-action="clearAutosave" title="Clear Autosave" aria-label="Clear autosaved draft">Clear Draft</button>
         <button type="button" class="file-btn" data-action="manageDrafts" title="Manage drafts" aria-label="Manage autosaved drafts">Drafts</button>
         <button type="button" class="file-btn" data-action="livePreview" title="Toggle Live Preview" aria-label="Toggle Live Preview">Live Preview</button>
-      </div>
+        </div>
+      </details>
       <button type="button" class="theme-toggle" aria-label="Toggle light or dark theme" aria-pressed="false">
         <span class="icon sun" aria-hidden="true">☀</span>
         <span class="icon moon" aria-hidden="true">☾</span>
       </button>
     </div>
-    <div class="responsive-toggle">
-      <button type="button" data-view="editor" aria-pressed="true">Editor</button>
-      <button type="button" data-view="live" aria-pressed="false">Live Preview</button>
+    <div class="responsive-toggle view-toggle" role="group" aria-label="Editor view">
+      <button type="button" data-view="split" aria-pressed="true">Split</button>
+      <button type="button" data-view="live" aria-pressed="false">Visual</button>
+      <button type="button" data-view="editor" aria-pressed="false">Markdown</button>
       <button type="button" data-view="preview" aria-pressed="false">Preview</button>
     </div>
   </header>
@@ -73,6 +75,7 @@
       <div class="file-explorer__header">
         <span>Explorer</span>
         <strong class="file-explorer__name">No folder open</strong>
+        <button type="button" class="file-explorer__new-file" data-action="newFolderFile" title="Create Markdown file in selected folder" aria-label="Create Markdown file in selected folder" disabled>+</button>
         <button type="button" class="file-explorer__toggle" data-action="toggleExplorer" title="Hide Explorer" aria-label="Hide Explorer" aria-pressed="true">‹</button>
       </div>
       <span class="file-explorer__rail-label" aria-hidden="true">Explorer</span>

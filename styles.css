@@ -232,6 +232,26 @@ body {
 
 /* Workspace additions: deliberately use the existing palette so they remain
    at home in the lightweight, local-first application. */
+/* Compact toolbar restored from the WYSIWYG workspace. */
+.app-header { display:grid; grid-template-columns:auto minmax(0,1fr) auto auto; gap:.6rem; padding:.6rem 1rem; }
+.header-groups { display:flex; align-items:center; justify-content:space-between; gap:.6rem; }
+.editor-toolbar { flex-wrap:nowrap; overflow-x:auto; padding:2px; }
+.file-toolbar { display:grid; grid-template-columns:repeat(2, minmax(112px, 1fr)); padding:.4rem; min-width:250px; border-left:0; }
+.toolbar-group { display:inline-flex; align-items:center; gap:.15rem; padding-right:.35rem; margin-right:.2rem; border-right:1px solid var(--border); }
+.toolbar-group:last-child { border-right:0; padding-right:0; margin-right:0; }
+.tool-btn--icon { justify-content:center; min-width:32px; padding:.35rem; font-weight:600; }
+.tool-btn--bold { font-family:Georgia,serif; font-size:1rem; font-weight:800; }
+.tool-btn--italic { font-family:Georgia,serif; font-size:1rem; font-style:italic; }
+.tool-btn--strike { text-decoration:line-through; }
+.tool-btn--code { font-family:"SFMono-Regular",Consolas,monospace; font-size:.75rem; }
+.app-menu { position:relative; flex:0 0 auto; }
+.app-menu summary { list-style:none; border:1px solid var(--border); border-radius:6px; background:var(--pane-bg); color:var(--fg); cursor:pointer; font-size:.85rem; padding:.35rem .6rem; }
+.app-menu summary::-webkit-details-marker { display:none; }
+.app-menu[open] summary { border-color:var(--accent); background:var(--accent-soft); }
+.app-menu .file-toolbar { position:absolute; z-index:22; top:calc(100% + .4rem); right:0; border:1px solid var(--border); border-radius:8px; background:var(--pane-bg); box-shadow:0 12px 28px rgba(15,23,42,.18); }
+.view-toggle { display:flex; gap:.25rem; padding:.2rem; background:var(--bg); border:1px solid var(--border); border-radius:8px; }
+.view-toggle button { border:0; background:transparent; color:var(--fg); padding:.32rem .55rem; border-radius:5px; cursor:pointer; font-size:.8rem; }
+.view-toggle button[aria-pressed="true"] { background:var(--pane-bg); color:var(--accent); box-shadow:0 1px 2px rgba(15,23,42,.12); }
 .workspace-center { display:flex; flex:1 1 auto; min-width:0; min-height:0; flex-direction:column; }
 .workspace-panes { display:flex; flex:1 1 auto; min-height:0; min-width:0; }
 .workspace-tabs { display:flex; min-height:34px; overflow:auto; border-bottom:1px solid var(--border); background:var(--header-bg); }
@@ -323,6 +343,24 @@ body {
   line-height: 1;
   cursor: pointer;
 }
+
+.file-explorer__new-file {
+  position:absolute;
+  top:.55rem;
+  right:2.45rem;
+  width:28px;
+  height:28px;
+  border:1px solid transparent;
+  border-radius:5px;
+  background:transparent;
+  color:var(--fg);
+  font-size:1.2rem;
+  line-height:1;
+  cursor:pointer;
+}
+.file-explorer__new-file:hover:not(:disabled),
+.file-explorer__new-file:focus:not(:disabled) { outline:none; border-color:var(--accent); background:var(--accent-soft); }
+.file-explorer__new-file:disabled { cursor:not-allowed; opacity:.4; }
 
 .file-explorer__toggle:hover,
 .file-explorer__toggle:focus {
@@ -546,6 +584,7 @@ body.resizing-explorer {
 .syntax-list-marker { color:var(--accent); font-weight:700; }
 .syntax-link { color:var(--syntax-link, #0070c1); }
 .syntax-code, .syntax-code-block { color:var(--syntax-code, #a31515); }
+.syntax-comment { color:var(--syntax-comment, #008000); }
 .syntax-strong { font-weight:700; }
 .syntax-emphasis { font-style:italic; }
 .syntax-highlight { color:var(--syntax-highlight, #795e26); background:rgba(255, 214, 10, .2); }
@@ -880,6 +919,10 @@ body.dragging #drop-zone {
 .app-main.live-preview .preview-pane { flex:1 1 auto; display:block; }
 .app-main.live-preview #preview { min-height:100%; outline:none; cursor:text; }
 .app-main.live-preview #preview:focus { box-shadow:inset 0 0 0 2px var(--accent-soft); }
+.responsive-toggle.view-toggle { display:flex; margin-left:0; align-self:auto; }
+.app-main.markdown-only .preview-pane,
+.app-main.markdown-only .divider { display:none; }
+.app-main.markdown-only .editor-pane { flex:1 1 auto; }
 
 @media (max-width: 960px) {
   .app-header {

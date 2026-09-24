@@ -16,6 +16,7 @@
   const explorerEmptyMessage = document.querySelector('.file-explorer__empty-message');
   const explorerReconnect = document.querySelector('.file-explorer__reconnect');
   const explorerOpenFolder = document.querySelector('.file-explorer__open-folder');
+  const explorerNewFile = document.querySelector('.file-explorer__new-file');
   const explorerToggles = document.querySelectorAll('[data-action="toggleExplorer"]');
   const main = document.querySelector('.app-main');
   const responsiveToggle = document.querySelectorAll('.responsive-toggle button');
@@ -105,6 +106,8 @@
   const folderPathsByDocumentId = new Map();
   let openedFolder = null;
   let activeFolderPath = null;
+  let selectedFolderPath = null;
+  let expandedFolderPaths = new Set();
   let rememberedDirectoryHandle = null;
   let pendingFolderReconnectState = null;
   let workspaceSession = { tabs: [], activeTab: null, context: 'outline', contextCollapsed: false, positions: {} };
@@ -615,6 +618,14 @@
           return;
         }
         const action = button.dataset.action;
+        if (action === 'undo') {
+          triggerUndo(editor.selectionStart, editor.selectionEnd);
+          return;
+        }
+        if (action === 'redo') {
+          triggerRedo(editor.selectionStart, editor.selectionEnd);
+          return;
+        }
         applyFormatting(action);
         editor.focus();
       });
@@ -673,6 +684,8 @@
           setResponsivePressed(main.classList.contains('live-preview') ? 'live' : 'editor');
           break;
       }
+      const menu = button.closest('.app-menu');
+      if (menu) menu.open = false;
     });
 
     fileInput.addEventListener('change', async (event) => {
@@ -703,11 +716,23 @@
     }
     explorerTree.addEventListener('click', (event) => {
       const fileButton = event.target.closest('button[data-folder-path]');
-      if (!fileButton) {
+      if (fileButton) {
+        openFolderFile(fileButton.dataset.folderPath);
         return;
       }
-      openFolderFile(fileButton.dataset.folderPath);
+      const directorySummary = event.target.closest('summary[data-directory-path]');
+      if (directorySummary) {
+        selectedFolderPath = directorySummary.dataset.directoryPath;
+        syncFolderExplorerSelection();
+      }
     });
+    explorerTree.addEventListener('toggle', (event) => {
+      const details = event.target;
+      const summary = details && details.querySelector(':scope > summary[data-directory-path]');
+      if (!summary) return;
+      if (details.open) expandedFolderPaths.add(summary.dataset.directoryPath);
+      else expandedFolderPaths.delete(summary.dataset.directoryPath);
+    }, true);
     if (explorerReconnect) {
       explorerReconnect.addEventListener('click', reconnectFolder);
     }
@@ -723,6 +748,7 @@
       }
       button.addEventListener('click', toggleExplorer);
     });
+    if (explorerNewFile) explorerNewFile.addEventListener('click', createFolderFile);
     if (!explorerDivider || !explorer) {
       return;
     }
@@ -957,14 +983,20 @@
     responsiveToggle.forEach((button) => {
       button.addEventListener('click', () => {
         const view = button.dataset.view;
-        if (view === 'live') {
+        if (view === 'split') {
+          setLivePreview(false);
+          main.classList.remove('show-preview', 'markdown-only');
+        } else if (view === 'live') {
+          main.classList.remove('markdown-only');
           setLivePreview(true);
         } else if (view === 'preview') {
           setLivePreview(false);
+          main.classList.remove('markdown-only');
           main.classList.add('show-preview');
         } else {
           setLivePreview(false);
           main.classList.remove('show-preview');
+          main.classList.add('markdown-only');
         }
         sessionStorage.setItem(VIEW_KEY, view);
         localStorage.setItem(VIEW_KEY, view);
@@ -1275,6 +1307,7 @@
       const escaped = escapeSyntaxHtml(line);
       if (/^\s*```/.test(line)) { fenced = !fenced; return `<span class="syntax-marker">${escaped}</span>`; }
       if (fenced) return `<span class="syntax-code-block">${escaped}</span>`;
+      if (/^\s*&lt;!--/.test(escaped)) return `<span class="syntax-comment">${escaped}</span>`;
       const heading = escaped.match(/^(\s*)(#{1,6})(\s+)(.*)$/);
       if (heading) return `${heading[1]}<span class="syntax-marker">${heading[2]}</span>${heading[3]}<span class="syntax-heading">${highlightMarkdownInline(heading[4])}</span>`;
       const list = escaped.match(/^(\s*)((?:[-+*])|(?:\d+[.)]))(\s+)(.*)$/);
@@ -1288,7 +1321,7 @@
   function updatePreview() {
     updateEditorSyntax();
     const text = (editor.value || '').replace(/\r\n?/g, '\n').replace(/[\u2028\u2029]/g, '\n');
-    const html = marked.parse(text);
+    const html = marked.parse(splitYamlFrontmatter(text).content);
     const clean = DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
     preview.innerHTML = clean;
     assignHeadingIds();
@@ -1302,6 +1335,11 @@
     }
     enforceSafeLinks();
     renderContextPanels();
+  }
+
+  function splitYamlFrontmatter(markdown) {
+    const match = String(markdown || '').match(/^(?:\uFEFF)?---[ \t]*\n[\s\S]*?\n(?:---|\.\.\.)[ \t]*(?:\n|$)/);
+    return match ? { frontmatter: match[0], content: markdown.slice(match[0].length) } : { frontmatter: '', content: markdown };
   }
 
   function assignHeadingIds() {
@@ -2632,6 +2670,8 @@
     const folderId = options.id || generateFolderId();
     openedFolder = { id: folderId, name, handle: directoryHandle, root: rootNode };
     activeFolderPath = null;
+    selectedFolderPath = '';
+    expandedFolderPaths = new Set();
     folderEntries.clear();
     folderPathLookup.clear();
     folderDocumentIds.clear();
@@ -2746,6 +2786,7 @@
     if (!explorer || !explorerTree || !explorerName || !explorerEmpty) {
       return;
     }
+    explorerTree.querySelectorAll('details[open] > summary[data-directory-path]').forEach((summary) => expandedFolderPaths.add(summary.dataset.directoryPath));
     explorerName.textContent = openedFolder ? openedFolder.name : 'No folder open';
     explorerName.title = openedFolder ? openedFolder.name : '';
     explorerTree.replaceChildren();
@@ -2759,6 +2800,11 @@
     if (explorerOpenFolder) {
       explorerOpenFolder.hidden = false;
     }
+    if (explorerNewFile) {
+      const writable = Boolean(openedFolder && openedFolder.handle);
+      explorerNewFile.disabled = !writable;
+      explorerNewFile.title = writable ? 'Create Markdown file in selected folder' : 'Reopen folder with write permission to create files';
+    }
     if (!openedFolder) {
       return;
     }
@@ -2766,6 +2812,7 @@
     list.className = 'file-tree';
     openedFolder.root.children.forEach((node) => list.appendChild(createTreeNode(node)));
     explorerTree.appendChild(list);
+    revealFolderPath(selectedFolderPath || getFolderParentPath(activeFolderPath));
   }
 
   function syncFolderExplorerSelection() {
@@ -2781,13 +2828,21 @@
         button.removeAttribute('aria-current');
       }
     });
+    explorerTree.querySelectorAll('summary[data-directory-path]').forEach((summary) => {
+      const isSelected = summary.dataset.directoryPath === selectedFolderPath;
+      summary.classList.toggle('is-active', isSelected);
+      if (isSelected) summary.setAttribute('aria-current', 'true');
+      else summary.removeAttribute('aria-current');
+    });
   }
 
   function createTreeNode(node) {
     const item = document.createElement('li');
     if (node.type === 'directory') {
       const details = document.createElement('details');
+      details.open = expandedFolderPaths.has(node.path);
       const summary = document.createElement('summary');
+      summary.dataset.directoryPath = node.path;
       summary.textContent = node.name;
       const list = document.createElement('ul');
       node.children.forEach((child) => list.appendChild(createTreeNode(child)));
@@ -2806,6 +2861,103 @@
     }
     item.appendChild(button);
     return item;
+  }
+
+  function revealFolderPath(path) {
+    if (!explorerTree) return;
+    const normalized = normalizeFolderPath(path || '');
+    const parts = normalized.split('/').filter(Boolean);
+    let current = '';
+    parts.forEach((part) => {
+      current = current ? `${current}/${part}` : part;
+      const summary = explorerTree.querySelector(`summary[data-directory-path="${cssEscape(current)}"]`);
+      if (summary && summary.parentElement) {
+        summary.parentElement.open = true;
+        expandedFolderPaths.add(current);
+      }
+    });
+  }
+
+  function cssEscape(value) {
+    return typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+      ? CSS.escape(value)
+      : String(value).replace(/(["\\])/g, '\\$1');
+  }
+
+  function getFolderParentPath(path) {
+    const normalized = normalizeFolderPath(path || '');
+    const slash = normalized.lastIndexOf('/');
+    return slash === -1 ? '' : normalized.slice(0, slash);
+  }
+
+  function findFolderNode(node, path) {
+    if (!node || node.type !== 'directory') return null;
+    if (node.path === path) return node;
+    for (const child of node.children) {
+      const match = findFolderNode(child, path);
+      if (match) return match;
+    }
+    return null;
+  }
+
+  async function getDirectoryHandleForPath(path) {
+    if (!openedFolder || !openedFolder.handle) return null;
+    let handle = openedFolder.handle;
+    for (const part of normalizeFolderPath(path || '').split('/').filter(Boolean)) {
+      handle = await handle.getDirectoryHandle(part);
+    }
+    return handle;
+  }
+
+  async function createFolderFile() {
+    if (!openedFolder || !openedFolder.handle) {
+      showToast('Reopen the folder with write permission to create files');
+      return;
+    }
+    const rawName = window.prompt('New Markdown file name', 'untitled.md');
+    if (rawName === null) return;
+    const trimmedName = rawName.trim();
+    if (!trimmedName || ILLEGAL_FILENAME.test(trimmedName) || trimmedName === '.' || trimmedName === '..') {
+      showToast('Enter a valid file name');
+      return;
+    }
+    const fileName = /\.(?:md|markdown)$/i.test(trimmedName) ? trimmedName : `${trimmedName}.md`;
+    const parentPath = selectedFolderPath !== null ? selectedFolderPath : getFolderParentPath(activeFolderPath);
+    const path = normalizeFolderPath(parentPath ? `${parentPath}/${fileName}` : fileName);
+    if (folderPathLookup.has(path.toLowerCase())) {
+      showToast('A file with that name already exists');
+      return;
+    }
+    try {
+      const directoryHandle = await getDirectoryHandleForPath(parentPath);
+      const handle = await directoryHandle.getFileHandle(fileName, { create: true });
+      const writable = await handle.createWritable();
+      await writable.write('');
+      await writable.close();
+      const parentNode = findFolderNode(openedFolder.root, parentPath);
+      if (!parentNode) throw new Error('Folder location no longer exists');
+      const entry = { type: 'file', name: fileName, path, handle };
+      parentNode.children.push(entry);
+      sortFolderChildren(parentNode);
+      folderEntries.set(path, entry);
+      folderPathLookup.set(path.toLowerCase(), path);
+      const documentId = createDocument(fileName, '', { makeCurrent: false, persist: false, render: false, focus: false });
+      const doc = documents[documentId];
+      doc.folderId = openedFolder.id;
+      doc.folderPath = path;
+      folderDocumentIds.set(path, documentId);
+      folderPathsByDocumentId.set(documentId, path);
+      fileHandles.set(documentId, handle);
+      vaultIndex.set(path, makeVaultIndexEntry(path, fileName, ''));
+      renderFolderExplorer();
+      setCurrentDocument(documentId, { focus: true });
+      saveFolderState();
+      saveDocumentsToStorage();
+      showToast(`Created ${fileName}`);
+    } catch (error) {
+      console.error(error);
+      showToast('Unable to create file in this folder');
+    }
   }
 
   async function triggerOpen() {
