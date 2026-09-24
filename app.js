@@ -393,7 +393,8 @@
   }
 
   function isFolderDocument(doc) {
-    return Boolean(doc && openedFolder && doc.folderId === openedFolder.id && doc.folderPath);
+    return Boolean(doc && openedFolder && doc.folderPath
+      && (doc.folderId === openedFolder.id || folderEntries.has(doc.folderPath)));
   }
 
   function isDocumentDirty(doc) {
@@ -1569,6 +1570,14 @@
         return;
       }
       if (!modKey) {
+        return;
+      }
+      if (event.key.toLowerCase() === 's') {
+        // The visual editor owns keyboard focus, so it must intercept the
+        // browser's native Save shortcut before it opens the download dialog.
+        event.preventDefault();
+        syncVisualToMarkdown();
+        triggerSave();
         return;
       }
       const shortcuts = { b: 'bold', i: 'italic', k: 'link' };
@@ -3517,7 +3526,10 @@
     }
     doc.content = editor.value;
     doc.updatedAt = Date.now();
-    if (isFolderDocument(doc)) {
+    // A folder file may have been restored from a previous session before its
+    // document metadata is rebuilt. Its handle is still the authoritative
+    // signal that Save/Cmd+S must write the opened file, never download it.
+    if (openedFolder && (isFolderDocument(doc) || currentFileHandle || fileHandles.get(doc.id))) {
       return saveFolderDocument(doc);
     }
     // Outside an opened folder, Save is deliberately an export: drafts remain
@@ -3531,7 +3543,7 @@
   }
 
   async function saveFolderDocument(doc) {
-    const handle = fileHandles.get(doc.id);
+    const handle = fileHandles.get(doc.id) || (doc.id === currentDocumentId ? currentFileHandle : null);
     if (!handle) {
       showToast('This folder is read-only. Reopen it with write permission to save.');
       setSaveStatus('Could not save to disk', 'error');

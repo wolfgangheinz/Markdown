@@ -1155,9 +1155,8 @@ body.dragging #drop-zone {
 
 }
 
-/* Keep desktop controls on one header row. The editor actions scroll within
-   their own column if space is genuinely limited, instead of pushing the
-   theme and view controls into empty rows. */
+/* Keep the wide desktop header compact, then give controls their own rows
+   before a laptop-sized viewport can clip or hide formatting actions. */
 .app-header { display:grid; grid-template-columns:auto minmax(0, 1fr) auto auto; align-items:center; gap:.6rem; padding:.6rem 1rem; }
 .logo-title { min-width:0; gap:.55rem; }
 .logo-title h1 { font-size:1.15rem; white-space:nowrap; }
@@ -1167,10 +1166,40 @@ body.dragging #drop-zone {
 .editor-toolbar { min-width:0; flex-wrap:nowrap; overflow-x:auto; }
 .view-toggle { flex:0 0 auto; flex-wrap:nowrap; }
 
+@media (max-width: 1800px) {
+  .app-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "identity theme"
+      "toolbar view";
+    row-gap: .45rem;
+  }
+
+  .logo-title { grid-area: identity; }
+  .header-groups { grid-area: toolbar; justify-content:flex-start; }
+  .theme-toggle { grid-area: theme; }
+  .view-toggle { grid-area: view; }
+
+  /* A 13-inch laptop gets the entire formatting bar, rather than a clipped
+     horizontal scroller. Groups wrap as whole, familiar clusters. */
+  .editor-toolbar { flex:1 1 auto; flex-wrap:wrap; overflow:visible; }
+}
+
+@media (max-width: 1120px) and (min-width: 961px) {
+  .app-header {
+    grid-template-areas:
+      "identity theme"
+      "toolbar toolbar"
+      "view view";
+  }
+
+  .view-toggle { justify-self:start; }
+}
+
 @media (max-width: 960px) {
   .app-header { display:flex; flex-wrap:wrap; padding:.45rem .75rem; }
   .header-groups { order:3; flex:1 1 100%; justify-content:flex-start; }
-  .editor-toolbar { flex:1 1 auto; }
+  .editor-toolbar { flex:1 1 auto; flex-wrap:wrap; overflow:visible; }
   .view-toggle { overflow:visible; max-width:none; flex-wrap:wrap; }
 }
 
