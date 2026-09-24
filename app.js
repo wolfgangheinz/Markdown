@@ -45,6 +45,8 @@
   const graphPanel = document.getElementById('graph-panel');
   const graphModal = document.getElementById('graph-modal');
   const graphModalCanvas = document.getElementById('graph-modal-canvas');
+  const aboutModal = document.querySelector('.about-modal');
+  const aboutContent = document.querySelector('.about-modal__content');
 
   if (!editor || !preview || !editorPane || !previewPane) {
     return;
@@ -56,6 +58,61 @@
     }
     themeToggle.addEventListener('click', () => {
       toggleTheme();
+    });
+  }
+
+  function bindAboutModal() {
+    const openButton = document.querySelector('.file-explorer__about');
+    if (!openButton || !aboutModal || !aboutContent) return;
+    const closeButton = aboutModal.querySelector('[data-action="closeAbout"]');
+    const fallbackMarkdown = document.getElementById('about-markdown').textContent.trim();
+    let returnFocus = null;
+
+    function renderAbout(markdown) {
+      aboutContent.innerHTML = DOMPurify.sanitize(marked.parse(markdown), { USE_PROFILES: { html: true } });
+      aboutContent.querySelectorAll('a[href]').forEach((link) => {
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+      });
+    }
+
+    function closeAbout() {
+      aboutModal.hidden = true;
+      if (returnFocus?.isConnected) returnFocus.focus();
+    }
+
+    openButton.addEventListener('click', async () => {
+      returnFocus = document.activeElement;
+      renderAbout(fallbackMarkdown);
+      aboutModal.hidden = false;
+      closeButton.focus();
+      if (window.location.protocol === 'file:') return;
+      try {
+        const response = await fetch('about.md');
+        if (response.ok && !aboutModal.hidden) renderAbout(await response.text());
+      } catch (error) {
+        // The bundled copy keeps About available without a server.
+      }
+    });
+    aboutModal.addEventListener('click', (event) => {
+      if (event.target.closest('[data-action="closeAbout"]')) closeAbout();
+    });
+    aboutModal.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeAbout();
+      } else if (event.key === 'Tab') {
+        const focusable = [closeButton, ...aboutContent.querySelectorAll('a[href]')];
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
     });
   }
 
@@ -76,6 +133,19 @@
   const THEME_KEY = 'markdown-studio-theme';
   const VIEW_KEY = 'markdown-studio-view';
   const WORKSPACE_KEY = 'markdown-studio-workspace-v1';
+  const WELCOME_MARKDOWN = `# Welcome to Markdown Studio
+
+Write Markdown on the left and see the finished page on the right. This welcome note is a draft you can edit or delete.
+
+## Quick start
+
+1. Start typing in the Markdown pane. The preview updates as you write.
+2. Use the toolbar for formatting, or try **bold**, *italic*, and a heading with \`#\`.
+3. Choose **Split**, **Visual**, **Markdown**, or **Preview** at the top to change how you work.
+4. Open **File → New** for another draft, or **File → Open** to load a file.
+
+Drafts save automatically in this browser; find them under **File → Drafts**. Use **File → Save** to download a Markdown file. To work directly with files in a folder, choose **File → Open Folder** (when your browser supports it).
+`;
   const AUTOSAVE_DELAY = 3000;
   const STORAGE_LIMIT_BYTES = 5 * 1024 * 1024;
   const ILLEGAL_FILENAME = /[<>:"/\\|?*]+/;
@@ -194,6 +264,7 @@
   bindResponsiveToggle();
   bindAutosave();
   bindThemeToggle();
+  bindAboutModal();
   bindDocumentTitle();
   bindDraftManager();
   bindFolderExplorer();
@@ -243,6 +314,8 @@
   function restoreDocuments() {
     documents = {};
     currentDocumentId = null;
+    const isFirstRun = localStorage.getItem(DOCUMENTS_KEY) === null
+      && localStorage.getItem(LEGACY_AUTOSAVE_KEY) === null;
     try {
       const raw = localStorage.getItem(DOCUMENTS_KEY);
       if (raw) {
@@ -287,10 +360,20 @@
     }
 
     if (!currentDocumentId) {
-      currentDocumentId = createDocument(generateUntitledName(), '', { persist: false, render: false, focus: false });
+      if (isFirstRun) {
+        setEditorView('split');
+      }
+      currentDocumentId = createDocument(
+        isFirstRun ? 'Welcome.md' : generateUntitledName(),
+        isFirstRun ? WELCOME_MARKDOWN : '',
+        { persist: false, render: false, focus: false }
+      );
     }
 
     setCurrentDocument(currentDocumentId, { focus: false, skipHistory: true });
+    if (isFirstRun) {
+      saveDocumentsToStorage();
+    }
     renderDraftList();
     updateStorageIndicator();
   }
@@ -1420,7 +1503,7 @@
 
   function renderBacklinks() {
     if (!backlinksPanel) return; backlinksPanel.replaceChildren();
-    const currentPath = activeFolderPath; if (!currentPath || !vaultIndex.size) { backlinksPanel.innerHTML = '<p class="context-empty">Open a vault note to see backlinks.</p>'; return; }
+    const currentPath = activeFolderPath; if (!currentPath || !vaultIndex.size) { backlinksPanel.innerHTML = '<p class="context-empty">Open a file within a folder to see backlinks.</p>'; return; }
     const matches = Array.from(vaultIndex.values()).filter((entry) => entry.path !== currentPath && entry.links.some((link) => link.path === currentPath));
     if (!matches.length) { backlinksPanel.innerHTML = '<p class="context-empty">No linked mentions.</p>'; return; }
     matches.forEach((entry) => { const button = document.createElement('button'); button.className = 'backlink-item'; button.type = 'button'; button.textContent = entry.name; const excerpt = document.createElement('small'); excerpt.textContent = entry.text.slice(0, 120); button.appendChild(excerpt); button.addEventListener('click', () => openFolderFile(entry.path)); backlinksPanel.appendChild(button); });

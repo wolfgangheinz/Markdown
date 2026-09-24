@@ -43,6 +43,8 @@ git clone https://github.com/<your-account>/<your-repo>.git
 2. Keep the `vendor/` folder alongside `index.html`, then double-click `index.html` or drag it into a modern browser (Edge, Chrome, Safari).
 3. Start typing in the Markdown pane; the preview updates automatically. Use **Visual** in the view switcher to write directly in the rendered document, or **Split** to see both representations.
 
+On the first visit, a short **Welcome.md** guide opens in Split view and is saved as the first local draft. Later visits restore existing drafts and the chosen view.
+
 The app runs locally—no server is required. To edit a folder’s files directly in Edge or Chrome, choose **Open Folder** and allow its permission prompt. Safari and other browsers use the available file-picker and download fallbacks.
 
 Keyboard Shortcuts
@@ -75,6 +77,7 @@ Project Structure
 - `styles.css` – App and preview styling (light/dark themes, typography, etc.).
 - `app.js` – Editor logic: workspace and vault features, editing and preview, persistence, file handling, and export.
 - `graph.js` – Folder graph model and layout.
+- `about.md` – The About dialog's Markdown content.
 - `vendor/` – Offline copies of Marked, DOMPurify, Highlight.js, Mermaid, Turndown, and preview styles.
 - `prd.md` – Product requirements reference.
 
