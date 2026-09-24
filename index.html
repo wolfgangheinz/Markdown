@@ -14,6 +14,7 @@
       <label class="sr-only" for="document-title">Document title</label>
       <input type="text" id="document-title" class="document-title-input" value="Untitled" maxlength="120" aria-describedby="document-title-help">
       <span id="document-title-help" class="sr-only">Press Enter or leave the field to save the new name.</span>
+      <span id="save-status" class="save-status" role="status" aria-live="polite">Saved locally</span>
     </div>
     <div class="header-groups">
       <div class="pane-toolbar editor-toolbar" role="toolbar" aria-label="Text formatting">
@@ -32,6 +33,7 @@
           <button type="button" class="tool-btn" data-action="heading" title="Heading (Ctrl/Cmd+1)" aria-label="Heading">Heading</button>
           <button type="button" class="tool-btn tool-btn--icon" data-action="ul" title="Bulleted list" aria-label="Bulleted list">☷</button>
           <button type="button" class="tool-btn tool-btn--icon" data-action="ol" title="Numbered list" aria-label="Numbered list">☷₁</button>
+          <button type="button" class="tool-btn tool-btn--icon" data-action="task" title="Task list" aria-label="Task list">☑</button>
           <button type="button" class="tool-btn tool-btn--icon" data-action="quote" title="Quote" aria-label="Quote">❝</button>
         </div>
         <div class="toolbar-group" role="group" aria-label="Insert">
@@ -55,7 +57,7 @@
         <button type="button" class="file-btn" data-action="copyRich" title="Copy Rendered HTML" aria-label="Copy rendered HTML">Copy Rich</button>
         <button type="button" class="file-btn" data-action="clearAutosave" title="Clear Autosave" aria-label="Clear autosaved draft">Clear Draft</button>
         <button type="button" class="file-btn" data-action="manageDrafts" title="Manage drafts" aria-label="Manage autosaved drafts">Drafts</button>
-        <button type="button" class="file-btn" data-action="livePreview" title="Toggle Live Preview" aria-label="Toggle Live Preview">Live Preview</button>
+        <button type="button" class="file-btn" data-action="livePreview" title="Toggle visual editor" aria-label="Toggle visual editor">Visual Editor</button>
         </div>
       </details>
       <button type="button" class="theme-toggle" aria-label="Toggle light or dark theme" aria-pressed="false">
@@ -65,7 +67,7 @@
     </div>
     <div class="responsive-toggle view-toggle" role="group" aria-label="Editor view">
       <button type="button" data-view="split" aria-pressed="true">Split</button>
-      <button type="button" data-view="live" aria-pressed="false">Visual</button>
+      <button type="button" data-view="wysiwyg" aria-pressed="false">Visual</button>
       <button type="button" data-view="editor" aria-pressed="false">Markdown</button>
       <button type="button" data-view="preview" aria-pressed="false">Preview</button>
     </div>
@@ -89,13 +91,13 @@
     <div class="explorer-divider" role="separator" aria-orientation="vertical" aria-label="Resize Explorer" aria-valuemin="140" aria-valuemax="480" aria-valuenow="240" tabindex="0"></div>
     <section class="workspace-center" aria-label="Workspace">
       <div class="workspace-tabs" role="tablist" aria-label="Open notes"></div>
-      <div class="workspace-panes">
+      <div class="workspace-panes" id="workspace-panes" role="tabpanel">
     <section class="pane editor-pane" aria-label="Markdown editor">
       <pre class="editor-syntax" aria-hidden="true"><code></code></pre>
-      <textarea id="editor" spellcheck="false" aria-label="Markdown editor"></textarea>
+      <textarea id="editor" spellcheck="true" aria-label="Markdown editor"></textarea>
     </section>
     <div class="divider" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize editor and preview panels"></div>
-    <section class="pane preview-pane" aria-label="Markdown preview" aria-live="polite">
+    <section class="pane preview-pane" aria-label="Markdown preview" aria-live="off">
       <article id="preview" class="markdown-body"></article>
     </section>
       </div>
@@ -107,9 +109,9 @@
         <button type="button" data-context="graph" role="tab" aria-selected="false">Graph</button>
         <button type="button" data-action="toggleContext" class="context-sidebar__toggle" aria-label="Hide note context">›</button>
       </div>
-      <section class="context-panel" data-panel="outline" role="tabpanel"><div class="context-panel__content" id="outline-panel"></div></section>
-      <section class="context-panel" data-panel="backlinks" role="tabpanel" hidden><div class="context-panel__content" id="backlinks-panel"></div></section>
-      <section class="context-panel" data-panel="graph" role="tabpanel" hidden><div class="context-panel__content graph-panel" id="graph-panel"></div></section>
+      <section class="context-panel" data-panel="outline" id="context-outline" role="tabpanel"><div class="context-panel__content" id="outline-panel"></div></section>
+      <section class="context-panel" data-panel="backlinks" id="context-backlinks" role="tabpanel" hidden><div class="context-panel__content" id="backlinks-panel"></div></section>
+      <section class="context-panel" data-panel="graph" id="context-graph" role="tabpanel" hidden><div class="context-panel__content graph-panel" id="graph-panel"></div></section>
     </aside>
   </main>
   <div class="toast" role="status" aria-live="polite" hidden></div>

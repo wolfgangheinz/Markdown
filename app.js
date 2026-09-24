@@ -25,6 +25,7 @@
   const previewPane = document.querySelector('.preview-pane');
   const themeToggle = document.querySelector('.theme-toggle');
   const docTitleInput = document.getElementById('document-title');
+  const saveStatus = document.getElementById('save-status');
   const draftManager = document.querySelector('.draft-manager');
   const draftList = draftManager ? draftManager.querySelector('.draft-manager__list') : null;
   const draftEmpty = draftManager ? draftManager.querySelector('.draft-manager__empty') : null;
@@ -97,6 +98,9 @@
   let documents = {};
   let currentDocumentId = null;
   let autosaveTimer = 0;
+  let previewTimer = 0;
+  let visualSyncTimer = 0;
+  let isSyncingVisual = false;
   let quotaToastShown = false;
   let turndownService = null;
   const fileHandles = new Map();
@@ -114,7 +118,6 @@
   let vaultIndex = new Map();
   let workspaceMode = 'quick';
   let workspaceSelectedIndex = 0;
-  let livePreviewTimer = 0;
   let pendingLinkInsert = null;
 
   marked.setOptions({
@@ -161,7 +164,8 @@
   bindExplorerControls();
   bindSynchronizedScrolling();
   bindWorkspace();
-  bindLivePreview();
+  bindVisualEditor();
+  bindPersistenceLifecycle();
   restoreFolderConnection();
 
   function restoreTheme() {
@@ -190,12 +194,13 @@
         explorerDivider.setAttribute('aria-valuenow', String(restoredWidth));
       }
     }
-    setExplorerCollapsed(localStorage.getItem(EXPLORER_COLLAPSED_KEY) === 'true', false);
+    const savedCollapsed = localStorage.getItem(EXPLORER_COLLAPSED_KEY);
+    setExplorerCollapsed(savedCollapsed === null ? window.innerWidth <= 960 : savedCollapsed === 'true', false);
   }
 
   function restoreView() {
     const stored = localStorage.getItem(VIEW_KEY);
-    setEditorView(stored === 'wysiwyg' ? 'wysiwyg' : stored === 'preview' ? 'preview' : stored === 'editor' ? 'editor' : 'split', false);
+    setEditorView(stored === 'wysiwyg' || stored === 'live' ? 'wysiwyg' : stored === 'preview' ? 'preview' : stored === 'editor' ? 'editor' : 'split', false);
   }
 
   function restoreDocuments() {
@@ -280,8 +285,7 @@
         doc.updatedAt = Date.now();
       }
       scheduleAutosave();
-      updatePreview();
-      updateActiveVaultIndex();
+      schedulePreviewUpdate();
       persistWorkspaceSession();
     });
   }
@@ -294,6 +298,35 @@
       autosaveTimer = 0;
       saveDocumentsToStorage();
     }, AUTOSAVE_DELAY);
+    setSaveStatus('Saving…');
+  }
+
+  function schedulePreviewUpdate() {
+    window.clearTimeout(previewTimer);
+    previewTimer = window.setTimeout(() => {
+      previewTimer = 0;
+      updateActiveVaultIndex(false);
+      updatePreview();
+    }, 140);
+  }
+
+  function setSaveStatus(message, state = '') {
+    if (!saveStatus) return;
+    saveStatus.textContent = message;
+    saveStatus.dataset.state = state;
+  }
+
+  function bindPersistenceLifecycle() {
+    const flush = () => {
+      if (autosaveTimer) window.clearTimeout(autosaveTimer);
+      autosaveTimer = 0;
+      saveDocumentsToStorage();
+      persistWorkspaceSession();
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') flush();
+    });
   }
 
   function saveDocumentsToStorage() {
@@ -301,8 +334,13 @@
       const payload = JSON.stringify({ currentId: currentDocumentId, documents });
       localStorage.setItem(DOCUMENTS_KEY, payload);
       updateStorageIndicator(payload);
+      setSaveStatus('Saved locally');
+      return true;
     } catch (err) {
       console.warn('Autosave failed', err);
+      setSaveStatus('Could not save locally', 'error');
+      showToast('Could not save locally. Open Drafts to free storage.');
+      return false;
     }
   }
 
@@ -457,6 +495,8 @@
   }
 
   function clearCurrentDraft() {
+    const doc = getCurrentDocument();
+    if (!doc || !window.confirm(`Discard the local draft “${doc.name}”? This cannot be undone.`)) return;
     deleteDocument(currentDocumentId);
     showToast('Draft cleared');
   }
@@ -619,6 +659,10 @@
           return;
         }
         const action = button.dataset.action;
+        if (isVisualMode()) {
+          applyVisualFormatting(action);
+          return;
+        }
         if (action === 'undo') {
           triggerUndo(editor.selectionStart, editor.selectionEnd);
           return;
@@ -681,8 +725,7 @@
           openDraftManager();
           break;
         case 'livePreview':
-          setLivePreview(!main.classList.contains('live-preview'));
-          setResponsivePressed(main.classList.contains('live-preview') ? 'live' : 'editor');
+          setEditorView(isVisualMode() ? 'split' : 'wysiwyg');
           break;
       }
       const menu = button.closest('.app-menu');
@@ -863,6 +906,14 @@
 
   function bindPreviewLinks() {
     preview.addEventListener('click', (event) => {
+      const externalMedia = event.target.closest('button[data-external-src]');
+      if (externalMedia) {
+        const image = document.createElement('img');
+        image.src = externalMedia.dataset.externalSrc;
+        image.alt = externalMedia.textContent.replace(/^Load external image:?\s*/i, '');
+        externalMedia.replaceWith(image);
+        return;
+      }
       const link = event.target.closest('a[data-folder-path]');
       if (!link) {
         return;
@@ -984,24 +1035,7 @@
     responsiveToggle.forEach((button) => {
       button.addEventListener('click', () => {
         const view = button.dataset.view;
-        if (view === 'split') {
-          setLivePreview(false);
-          main.classList.remove('show-preview', 'markdown-only');
-        } else if (view === 'live') {
-          main.classList.remove('markdown-only');
-          setLivePreview(true);
-        } else if (view === 'preview') {
-          setLivePreview(false);
-          main.classList.remove('markdown-only');
-          main.classList.add('show-preview');
-        } else {
-          setLivePreview(false);
-          main.classList.remove('show-preview');
-          main.classList.add('markdown-only');
-        }
-        sessionStorage.setItem(VIEW_KEY, view);
-        localStorage.setItem(VIEW_KEY, view);
-        setResponsivePressed(view);
+        setEditorView(view);
       });
     });
 
@@ -1018,12 +1052,13 @@
       syncVisualToMarkdown();
     }
     main.classList.toggle('wysiwyg-mode', chosen === 'wysiwyg');
+    main.classList.remove('live-preview');
     main.classList.toggle('markdown-only', chosen === 'editor');
     main.classList.toggle('show-preview', chosen === 'preview');
     preview.contentEditable = chosen === 'wysiwyg' ? 'true' : 'false';
     preview.setAttribute('role', chosen === 'wysiwyg' ? 'textbox' : 'article');
     preview.setAttribute('aria-label', chosen === 'wysiwyg' ? 'Visual Markdown editor' : 'Markdown preview');
-    preview.setAttribute('aria-live', chosen === 'wysiwyg' ? 'off' : 'polite');
+    preview.setAttribute('aria-live', 'off');
     if (persist) {
       sessionStorage.setItem(VIEW_KEY, chosen);
       localStorage.setItem(VIEW_KEY, chosen);
@@ -1041,41 +1076,6 @@
     });
   }
 
-  function bindLivePreview() {
-    preview.addEventListener('input', () => {
-      if (!main.classList.contains('live-preview') || !turndownService) return;
-      window.clearTimeout(livePreviewTimer);
-      livePreviewTimer = window.setTimeout(syncLivePreviewToMarkdown, 700);
-    });
-    preview.addEventListener('blur', () => {
-      if (main.classList.contains('live-preview')) syncLivePreviewToMarkdown();
-    });
-  }
-
-  function setLivePreview(enabled) {
-    if (!enabled) {
-      window.clearTimeout(livePreviewTimer); livePreviewTimer = 0;
-      if (main.classList.contains('live-preview')) syncLivePreviewToMarkdown();
-    }
-    main.classList.toggle('live-preview', enabled);
-    preview.contentEditable = enabled ? 'true' : 'false';
-    preview.setAttribute('role', enabled ? 'textbox' : 'article');
-    preview.setAttribute('aria-label', enabled ? 'Live Preview editor' : 'Markdown preview');
-    if (enabled) { main.classList.remove('show-preview'); window.requestAnimationFrame(() => preview.focus()); }
-  }
-
-  function syncLivePreviewToMarkdown() {
-    window.clearTimeout(livePreviewTimer); livePreviewTimer = 0;
-    if (!main.classList.contains('live-preview') || !turndownService) return;
-    try {
-      const markdown = turndownService.turndown(preview.innerHTML).replace(/\r\n?/g, '\n');
-      if (markdown === editor.value) return;
-      editor.value = markdown;
-      const doc = getCurrentDocument(); if (doc) { doc.content = markdown; doc.updatedAt = Date.now(); }
-      scheduleAutosave(); updateActiveVaultIndex();
-    } catch (error) { console.warn('Live Preview conversion failed', error); }
-  }
-
   function bindWorkspace() {
     restoreWorkspaceSession();
     ensureWorkspaceTab(currentDocumentId);
@@ -1090,6 +1090,16 @@
           setCurrentDocument(tab.dataset.tabId);
         }
       });
+      workspaceTabs.addEventListener('keydown', (event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        const tabs = Array.from(workspaceTabs.querySelectorAll('[role="tab"]'));
+        const index = tabs.indexOf(document.activeElement);
+        if (index < 0 || !tabs.length) return;
+        event.preventDefault();
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+        tabs[next].focus();
+        setCurrentDocument(tabs[next].dataset.tabId);
+      });
     }
     document.addEventListener('keydown', (event) => {
       if (event.defaultPrevented) return;
@@ -1100,7 +1110,10 @@
       if (key === 'p' && !event.shiftKey) { event.preventDefault(); openWorkspaceModal('command'); }
       if (key === 'f' && event.shiftKey && openedFolder) { event.preventDefault(); openWorkspaceModal('search'); }
     });
-    document.querySelectorAll('[data-context]').forEach((button) => button.addEventListener('click', () => setContextPanel(button.dataset.context)));
+    document.querySelectorAll('[data-context]').forEach((button) => {
+      button.setAttribute('aria-controls', `context-${button.dataset.context}`);
+      button.addEventListener('click', () => setContextPanel(button.dataset.context));
+    });
     document.querySelectorAll('[data-action="toggleContext"]').forEach((button) => button.addEventListener('click', toggleContextSidebar));
     if (workspaceModal) {
       workspaceModal.addEventListener('click', (event) => { if (event.target.dataset.action === 'closeWorkspaceModal') closeWorkspaceModal(); });
@@ -1170,11 +1183,12 @@
     workspaceTabs.replaceChildren();
     workspaceSession.tabs = workspaceSession.tabs.filter((id) => documents[id]);
     workspaceSession.tabs.forEach((id) => {
-      const doc = documents[id]; const tab = document.createElement('button');
-      tab.type = 'button'; tab.className = 'workspace-tab'; tab.dataset.tabId = id; tab.setAttribute('role', 'tab'); tab.setAttribute('aria-selected', String(id === currentDocumentId));
+      const doc = documents[id]; const tabGroup = document.createElement('div'); tabGroup.className = 'workspace-tab-group'; const tab = document.createElement('button');
+      tab.type = 'button'; tab.id = `workspace-tab-${id}`; tab.className = 'workspace-tab'; tab.dataset.tabId = id; tab.setAttribute('role', 'tab'); tab.setAttribute('aria-selected', String(id === currentDocumentId)); tab.setAttribute('aria-controls', 'workspace-panes');
       const label = document.createElement('span'); label.className = 'workspace-tab__label'; label.textContent = doc.name.replace(/\.md$/i, '');
-      const close = document.createElement('span'); close.className = 'workspace-tab__close'; close.dataset.closeTab = id; close.setAttribute('aria-label', `Close ${doc.name}`); close.textContent = '×';
-      tab.append(label, close); workspaceTabs.appendChild(tab);
+      const close = document.createElement('button'); close.type = 'button'; close.className = 'workspace-tab__close'; close.dataset.closeTab = id; close.setAttribute('aria-label', `Close ${doc.name}`); close.textContent = '×';
+      tab.append(label); tabGroup.append(tab, close); workspaceTabs.appendChild(tabGroup);
+      if (id === currentDocumentId && workspacePanes) workspacePanes.setAttribute('aria-labelledby', tab.id);
     });
   }
 
@@ -1278,11 +1292,11 @@
       vaultIndex.set(path, makeVaultIndexEntry(path, entry.name, content));
     }));
   }
-  function updateActiveVaultIndex() {
+  function updateActiveVaultIndex(shouldRender = true) {
     if (!activeFolderPath || !folderEntries.has(activeFolderPath)) return;
     const doc = getCurrentDocument();
     vaultIndex.set(activeFolderPath, makeVaultIndexEntry(activeFolderPath, folderEntries.get(activeFolderPath).name, doc ? doc.content : editor.value));
-    renderContextPanels();
+    if (shouldRender) renderContextPanels();
   }
   function makeVaultIndexEntry(path, name, content) { const markdown = String(content || ''); const links = []; const headings = []; markdown.replace(/^#{1,6}\s+(.+)$/gm, (_, heading) => { headings.push(heading.trim()); return _; }); markdown.replace(/\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)/g, (_, href) => { const target = resolveVaultLink(path, href); if (target) links.push(target); return _; }); return { path, name, headings, text: markdown.replace(/[`*_#>[\]()]/g, ' ').replace(/\s+/g, ' ').trim(), links }; }
   function resolveVaultLink(fromPath, href) {
@@ -1293,46 +1307,6 @@
     const candidates = /\.(?:md|markdown)$/i.test(base) ? [base] : [base, `${base}.md`, `${base}.markdown`];
     for (const candidate of candidates) { const resolved = folderPathLookup.get(candidate.toLowerCase()); if (resolved) return { path: resolved }; }
     return null;
-  }
-
-  function updateEditorSyntax() {
-    if (!editorSyntax) return;
-    editorSyntax.innerHTML = highlightMarkdown(editor.value || '');
-    synchronizeEditorSyntaxScroll();
-  }
-
-  function synchronizeEditorSyntaxScroll() {
-    if (editorSyntax) editorSyntax.style.transform = `translate(${-editor.scrollLeft}px, ${-editor.scrollTop}px)`;
-  }
-
-  function escapeSyntaxHtml(value) { return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-
-  function highlightMarkdownInline(value) {
-    return value.replace(/(`[^`]*`)|(\*\*|__)(.+?)\2|(\*|_)([^*_]+?)\4|(~~)(.+?)\6|(==)(.+?)\8|(!?\[[^\]]*\]\([^)]*\))/g, (match, code, strongMarker, strongText, emphasisMarker, emphasisText, strikeMarker, strikeText, markMarker, markText, link) => {
-      if (code) return `<span class="syntax-code">${code}</span>`;
-      if (strongMarker) return `<span class="syntax-marker">${strongMarker}</span><span class="syntax-strong">${strongText}</span><span class="syntax-marker">${strongMarker}</span>`;
-      if (emphasisMarker) return `<span class="syntax-marker">${emphasisMarker}</span><span class="syntax-emphasis">${emphasisText}</span><span class="syntax-marker">${emphasisMarker}</span>`;
-      if (strikeMarker) return `<span class="syntax-marker">${strikeMarker}</span><span class="syntax-emphasis">${strikeText}</span><span class="syntax-marker">${strikeMarker}</span>`;
-      if (markMarker) return `<span class="syntax-marker">${markMarker}</span><span class="syntax-highlight">${markText}</span><span class="syntax-marker">${markMarker}</span>`;
-      return `<span class="syntax-link">${link}</span>`;
-    });
-  }
-
-  function highlightMarkdown(markdown) {
-    let fenced = false;
-    return markdown.replace(/\r\n?/g, '\n').split('\n').map((line) => {
-      const escaped = escapeSyntaxHtml(line);
-      if (/^\s*```/.test(line)) { fenced = !fenced; return `<span class="syntax-marker">${escaped}</span>`; }
-      if (fenced) return `<span class="syntax-code-block">${escaped}</span>`;
-      if (/^\s*&lt;!--/.test(escaped)) return `<span class="syntax-comment">${escaped}</span>`;
-      const heading = escaped.match(/^(\s*)(#{1,6})(\s+)(.*)$/);
-      if (heading) return `${heading[1]}<span class="syntax-marker">${heading[2]}</span>${heading[3]}<span class="syntax-heading">${highlightMarkdownInline(heading[4])}</span>`;
-      const list = escaped.match(/^(\s*)((?:[-+*])|(?:\d+[.)]))(\s+)(.*)$/);
-      if (list) return `${list[1]}<span class="syntax-list-marker">${list[2]}</span>${list[3]}${highlightMarkdownInline(list[4])}`;
-      const quote = escaped.match(/^(\s*)(&gt;)(\s?)(.*)$/);
-      if (quote) return `${quote[1]}<span class="syntax-marker">${quote[2]}</span>${quote[3]}${highlightMarkdownInline(quote[4])}`;
-      return highlightMarkdownInline(escaped);
-    }).join('\n');
   }
 
   function updatePreview() {
@@ -1351,6 +1325,7 @@
       });
     }
     enforceSafeLinks();
+    protectExternalMedia();
     renderContextPanels();
   }
 
@@ -1532,6 +1507,7 @@
       case 'heading': command('formatBlock', 'h1'); break;
       case 'ul': command('insertUnorderedList'); break;
       case 'ol': command('insertOrderedList'); break;
+      case 'task': command('insertHTML', '<span>- [ ] </span>'); break;
       case 'quote': command('formatBlock', 'blockquote'); break;
       case 'inlineCode': command('insertHTML', `<code>${escapeHtml(window.getSelection().toString() || 'code')}</code>`); break;
       case 'code': command('insertHTML', '<pre><code>code</code></pre>'); break;
@@ -1617,6 +1593,19 @@
         link.setAttribute('rel', 'noreferrer noopener');
       }
     }
+  }
+
+  function protectExternalMedia() {
+    preview.querySelectorAll('img[src]').forEach((image) => {
+      const source = image.getAttribute('src') || '';
+      if (!/^https?:\/\//i.test(source)) return;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'external-media-button';
+      button.dataset.externalSrc = source;
+      button.textContent = `Load external image${image.alt ? `: ${image.alt}` : ''}`;
+      image.replaceWith(button);
+    });
   }
 
   function resolveFolderMarkdownLink(href) {
@@ -2577,6 +2566,7 @@
         case 'deleteDraft':
           if (id) {
             const doc = documents[id];
+            if (!doc || !window.confirm(`Delete the local draft “${doc.name}”? This cannot be undone.`)) break;
             deleteDocument(id);
             showToast(doc ? `Deleted ${doc.name}` : 'Draft deleted');
           }

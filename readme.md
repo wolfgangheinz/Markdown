@@ -14,6 +14,8 @@ Features
 - Syntax-highlighted code blocks powered by Highlight.js.
 - Copy rendered HTML, export standalone HTML, or print to PDF.
 - Light/dark themes and toast notifications for key actions.
+- Autosave status with a final save on browser background/close, plus confirmation before permanently deleting a draft.
+- Visual editing mode that persists with the selected view; remote images are opt-in to avoid background network requests.
 - Marked, DOMPurify, Highlight.js, Mermaid, and Turndown are bundled in `vendor/`; no document contents or runtime dependencies leave the machine.
 
 Getting Started
