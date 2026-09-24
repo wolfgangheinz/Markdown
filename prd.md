@@ -40,7 +40,7 @@ Provide a **self-contained, offline Markdown editor** (HTML + JS + CSS, no backe
 - **Theme Toggle**: Light/Dark themes, instant switch, persisted in `localStorage`.
 - **Syntax Highlighting**: Applies highlight.js styling to code blocks when the library is available.
 - **Mermaid Diagrams**: Fenced code blocks tagged `mermaid` render as diagrams when Mermaid is available; fall back to code blocks if the library is missing.
-- **Local Vault Workspace**: An opened folder acts as one local vault with persistent note tabs, Quick Switcher, Command Palette, full-text vault search, a heading outline, linked backlinks, and a one-hop local graph.
+- **Local Vault Workspace**: An opened folder acts as one local vault with persistent note tabs, Quick Switcher, Command Palette, full-text vault search, a heading outline, linked backlinks, and a graph of all notes connected to the current file.
 - **Portable Note Links**: Link picker inserts relative standard Markdown links; generated links remain interoperable outside the app.
 
 ### File Handling

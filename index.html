@@ -53,6 +53,7 @@
         <button type="button" class="file-btn" data-action="new" title="New document" aria-label="New document">New</button>
         <button type="button" class="file-btn" data-action="open" title="Open" aria-label="Open file">Open</button>
         <button type="button" class="file-btn" data-action="openFolder" title="Open folder" aria-label="Open folder">Open Folder</button>
+        <button type="button" class="file-btn" data-action="graph" title="Explore folder graph" aria-label="Explore folder graph">Graph</button>
         <button type="button" class="file-btn" data-action="save" title="Save" aria-label="Save file">Save</button>
         <button type="button" class="file-btn" data-action="saveAs" title="Save As" aria-label="Save file as">Save As</button>
         <button type="button" class="file-btn" data-action="exportHtml" title="Export HTML" aria-label="Export as HTML">Export HTML</button>
@@ -152,8 +153,19 @@
   <div class="graph-modal" id="graph-modal" hidden>
     <div class="graph-modal__backdrop" data-action="closeGraphModal"></div>
     <section class="graph-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="graph-modal-title">
-      <header><div><h2 id="graph-modal-title">Local graph</h2><p id="graph-modal-description">Connected notes</p></div><button type="button" data-action="closeGraphModal" aria-label="Close graph">×</button></header>
+      <header><div><h2 id="graph-modal-title">Connected notes</h2><p id="graph-modal-description">Notes related to the current file</p></div><button type="button" data-action="closeGraphModal" aria-label="Close graph">×</button></header>
+      <div class="graph-controls">
+        <input id="graph-search" type="search" placeholder="Find a note…" aria-label="Find a note in graph" autocomplete="off">
+        <label><input id="graph-labels" type="checkbox" checked> Labels</label>
+        <div class="graph-controls__zoom" role="group" aria-label="Graph zoom">
+          <button type="button" data-graph-action="zoomIn" aria-label="Zoom in">+</button>
+          <button type="button" data-graph-action="zoomOut" aria-label="Zoom out">−</button>
+          <button type="button" data-graph-action="fit">Fit</button>
+          <button type="button" data-graph-action="current">Current note</button>
+        </div>
+      </div>
       <div id="graph-modal-canvas" class="graph-modal__canvas"></div>
+      <footer class="graph-modal__footer"><div id="graph-selection">Select a note to see its connections. Drag to pan · scroll to zoom.</div><button type="button" id="graph-open-note" disabled>Open note</button></footer>
     </section>
   </div>
   
@@ -162,6 +174,7 @@
   <script src="vendor/highlight-common.min.js" defer></script>
   <script src="vendor/mermaid.min.js" defer></script>
   <script src="vendor/turndown.js" defer></script>
+  <script src="graph.js" defer></script>
   <script src="app.js" defer></script>
 </body>
 </html>

@@ -120,6 +120,13 @@
   let pendingFolderReconnectState = null;
   let workspaceSession = { tabs: [], activeTab: null, context: 'outline', contextCollapsed: false, positions: {} };
   let vaultIndex = new Map();
+  let graphCache = null;
+  let graphPanelCache = null;
+  let graphPanelActivePath = null;
+  let graphView = null;
+  let graphSelection = null;
+  let graphReturnFocus = null;
+  let graphResizeObserver = null;
   let workspaceMode = 'quick';
   let workspaceSelectedIndex = 0;
   let pendingLinkInsert = null;
@@ -822,6 +829,9 @@
         case 'openFolder':
           triggerOpenFolder();
           break;
+        case 'graph':
+          openGraphModal();
+          break;
         case 'toggleExplorer':
           toggleExplorer();
           break;
@@ -1260,7 +1270,39 @@
     if (workspaceModal) {
       workspaceModal.addEventListener('click', (event) => { if (event.target.dataset.action === 'closeWorkspaceModal') closeWorkspaceModal(); });
     }
-    if (graphModal) graphModal.addEventListener('click', (event) => { if (event.target.dataset.action === 'closeGraphModal') closeGraphModal(); });
+    if (graphModal) {
+      graphModal.addEventListener('click', (event) => {
+        if (event.target.dataset.action === 'closeGraphModal') closeGraphModal();
+        const action = event.target.closest('[data-graph-action]')?.dataset.graphAction;
+        if (action === 'zoomIn') graphView?.zoom(.75);
+        if (action === 'zoomOut') graphView?.zoom(1.33);
+        if (action === 'fit') graphView?.fit();
+        if (action === 'current' && activeFolderPath) {
+          selectGraphNode(activeFolderPath, true);
+        }
+      });
+      document.getElementById('graph-labels').addEventListener('change', () => graphView?.refresh());
+      const search = document.getElementById('graph-search');
+      search.addEventListener('input', () => graphView?.highlight());
+      search.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && search.value) { search.value = ''; graphView?.highlight(); event.stopPropagation(); }
+        if (event.key === 'Enter') {
+          const query = search.value.trim().toLowerCase();
+          const match = graphView?.graph.nodes.find((node) => `${node.name} ${node.path}`.toLowerCase().includes(query));
+          if (query && match) selectGraphNode(match.path, true);
+        }
+      });
+      document.getElementById('graph-open-note').addEventListener('click', openSelectedGraphNote);
+      graphModal.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') { event.preventDefault(); closeGraphModal(); }
+        if (event.key === 'Tab') {
+          const focusable = Array.from(graphModal.querySelectorAll('button:not(:disabled), input, [tabindex="0"]')).filter((element) => element.getClientRects().length);
+          const first = focusable[0]; const last = focusable[focusable.length - 1];
+          if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+          else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+        }
+      });
+    }
     if (workspaceQuery) {
       workspaceQuery.addEventListener('input', () => { workspaceSelectedIndex = 0; renderWorkspaceResults(); });
       workspaceQuery.addEventListener('keydown', handleWorkspaceQueryKeydown);
@@ -1385,39 +1427,255 @@
   }
 
   function renderGraph() {
-    if (!graphPanel) return; graphPanel.replaceChildren();
-    const currentPath = activeFolderPath; if (!currentPath || !vaultIndex.has(currentPath)) { graphPanel.innerHTML = '<p class="context-empty">Open a vault note to see its graph.</p>'; return; }
-    const graph = collectLocalGraph(currentPath); const toolbar = document.createElement('div'); toolbar.className = 'graph-toolbar';
-    const count = document.createElement('span'); count.textContent = `${graph.nodes.length - 1} connected note${graph.nodes.length === 2 ? '' : 's'}`;
-    const open = document.createElement('button'); open.type = 'button'; open.className = 'graph-open-button'; open.textContent = 'Open graph'; open.addEventListener('click', openGraphModal); toolbar.append(count, open);
-    graphPanel.append(toolbar, createGraphSvg(graph, { width: 280, height: 240, labels: false, limit: 12 }));
+    if (!graphPanel || workspaceSession.context !== 'graph' || workspaceSession.contextCollapsed) return;
+    if (graphCache && graphPanel.childNodes.length && graphPanelCache === graphCache && graphPanelActivePath === activeFolderPath) return;
+    graphPanel.replaceChildren();
+    graphPanelCache = graphCache;
+    graphPanelActivePath = activeFolderPath;
+    if (!openedFolder) { graphPanel.innerHTML = '<p class="context-empty">Open a folder to explore its graph.</p>'; return; }
+    if (!activeFolderPath) { graphPanel.innerHTML = '<p class="context-empty">Open a note to see its connected graph.</p>'; return; }
+    const { graph, layout } = getFolderGraph();
+    graphPanelCache = graphCache;
+    const toolbar = document.createElement('div'); toolbar.className = 'graph-toolbar';
+    const count = document.createElement('span'); count.textContent = `${graph.nodes.length} notes · ${graph.edges.length} links`;
+    const open = document.createElement('button'); open.type = 'button'; open.className = 'graph-open-button'; open.textContent = 'Explore graph'; open.addEventListener('click', openGraphModal);
+    toolbar.append(count, open);
+    graphPanel.appendChild(toolbar);
+    if (!graph.nodes.length) { graphPanel.insertAdjacentHTML('beforeend', '<p class="context-empty">This note is not in the open folder.</p>'); return; }
+    const preview = createGraphSvg(graph, layout, { mini: true });
+    preview.svg.addEventListener('click', openGraphModal);
+    graphPanel.appendChild(preview.svg);
+    preview.fit();
+    const hint = document.createElement('p'); hint.className = 'graph-panel__hint'; hint.textContent = graph.nodes.length === 1 ? 'No links to other notes yet.' : 'This view follows links through the entire connected group.';
+    graphPanel.appendChild(hint);
   }
 
-  function collectLocalGraph(currentPath) {
-    const entry = vaultIndex.get(currentPath); const outgoing = new Set(entry.links.map((link) => link.path)); const incoming = new Set();
-    vaultIndex.forEach((candidate) => { if (candidate.links.some((link) => link.path === currentPath)) incoming.add(candidate.path); });
-    const neighbors = Array.from(new Set([...outgoing, ...incoming])).filter((path) => path !== currentPath).sort((a, b) => ((vaultIndex.get(a) || {}).name || a).localeCompare((vaultIndex.get(b) || {}).name || b));
-    return { currentPath, nodes: [currentPath, ...neighbors], outgoing, incoming };
+  function getFolderGraph() {
+    if (!graphCache || !graphCache.graph.byPath.has(activeFolderPath)) {
+      const fullGraph = window.MarkdownGraph.build(vaultIndex.values());
+      const graph = window.MarkdownGraph.connectedComponent(fullGraph, activeFolderPath);
+      graphCache = { graph, layout: window.MarkdownGraph.layout(graph) };
+    }
+    return graphCache;
   }
 
-  function createGraphSvg(graph, options) {
-    const width = options.width; const height = options.height; const limit = options.limit || graph.nodes.length; const nodes = graph.nodes.slice(0, limit); const center = { x: width / 2, y: height / 2 }; const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', `0 0 ${width} ${height}`); svg.setAttribute('class', 'graph-svg'); svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', 'Local graph of linked notes');
-    const positions = new Map([[graph.currentPath, center]]); const neighbors = nodes.slice(1); const innerCount = Math.min(neighbors.length, options.labels ? 10 : 8);
-    neighbors.forEach((path, index) => { const outer = index >= innerCount; const ring = outer ? Math.min(width, height) * .39 : Math.min(width, height) * .27; const count = outer ? neighbors.length - innerCount : innerCount; const localIndex = outer ? index - innerCount : index; const angle = (Math.PI * 2 * localIndex) / Math.max(count, 1) - Math.PI / 2; positions.set(path, { x: center.x + Math.cos(angle) * ring, y: center.y + Math.sin(angle) * ring }); });
-    neighbors.forEach((path) => { const point = positions.get(path); const edge = document.createElementNS(svg.namespaceURI, 'line'); edge.setAttribute('x1', center.x); edge.setAttribute('y1', center.y); edge.setAttribute('x2', point.x); edge.setAttribute('y2', point.y); edge.setAttribute('class', 'graph-edge'); svg.appendChild(edge); });
-    neighbors.forEach((path) => appendGraphNode(svg, positions.get(path), path, false, options.labels)); appendGraphNode(svg, center, graph.currentPath, true, options.labels); return svg;
+  function createGraphSvg(graph, layout, options = {}) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', `graph-svg${options.mini ? ' graph-svg--mini' : ''}`);
+    svg.setAttribute('role', options.mini ? 'img' : 'group');
+    svg.setAttribute('aria-label', `Connected graph with ${graph.nodes.length} notes and ${graph.edges.length} links`);
+    const bounds = layout.bounds;
+    const view = { ...bounds };
+    const edges = new Map(); const nodes = new Map(); const circles = new Map(); const labels = new Map();
+    for (const edge of graph.edges) {
+      const a = layout.positions.get(edge.source); const b = layout.positions.get(edge.target);
+      const line = document.createElementNS(svg.namespaceURI, 'line');
+      line.setAttribute('x1', a.x); line.setAttribute('y1', a.y); line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
+      line.setAttribute('class', 'graph-edge'); svg.appendChild(line);
+      edges.set(JSON.stringify([edge.source, edge.target]), line);
+    }
+    for (const node of graph.nodes) {
+      const point = layout.positions.get(node.path);
+      const group = document.createElementNS(svg.namespaceURI, 'g');
+      group.setAttribute('class', 'graph-node-group'); group.setAttribute('transform', `translate(${point.x} ${point.y})`);
+      if (!options.mini) {
+        const hit = document.createElementNS(svg.namespaceURI, 'circle'); hit.setAttribute('class', 'graph-hit'); group.appendChild(hit);
+      }
+      const circle = document.createElementNS(svg.namespaceURI, 'circle');
+      circle.setAttribute('class', `graph-node${node.path === activeFolderPath ? ' graph-node--active' : ''}${node.degree ? '' : ' graph-node--orphan'}`);
+      const title = document.createElementNS(svg.namespaceURI, 'title'); title.textContent = `${node.path} · ${node.degree} connection${node.degree === 1 ? '' : 's'}`;
+      group.append(circle, title);
+      if (!options.mini) {
+        group.setAttribute('role', 'button'); group.setAttribute('tabindex', '0');
+        group.setAttribute('aria-label', `${node.path}, ${node.degree} connections`);
+        const label = document.createElementNS(svg.namespaceURI, 'text');
+        label.setAttribute('text-anchor', 'middle'); label.setAttribute('class', 'graph-label');
+        const plainName = node.name.replace(/\.(?:md|markdown)$/i, '');
+        label.textContent = plainName.length > 34 ? `${plainName.slice(0, 31)}…` : plainName;
+        group.appendChild(label); labels.set(node.path, label);
+        group.addEventListener('click', () => selectGraphNode(node.path));
+        group.addEventListener('dblclick', openSelectedGraphNote);
+        group.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectGraphNode(node.path); } });
+        group.addEventListener('pointerenter', () => { if (graphView) { graphView.hover = node.path; graphView.highlight(); } });
+        group.addEventListener('pointerleave', () => { if (graphView) { graphView.hover = null; graphView.highlight(); } });
+      }
+      svg.appendChild(group); nodes.set(node.path, group); circles.set(node.path, circle);
+    }
+    function screenScale() {
+      const rect = svg.getBoundingClientRect();
+      return Math.max(.001, Math.min((rect.width || 900) / view.width, (rect.height || 600) / view.height));
+    }
+    function refreshLabels() {
+      if (options.mini) return;
+      const enabled = document.getElementById('graph-labels').checked;
+      if (!enabled) { labels.forEach((label) => label.classList.remove('is-visible')); return; }
+      const rect = svg.getBoundingClientRect(); const scale = screenScale();
+      const offsetX = (rect.width - view.width * scale) / 2;
+      const offsetY = (rect.height - view.height * scale) / 2;
+      const query = document.getElementById('graph-search').value.trim().toLowerCase();
+      const focus = graphView?.hover || graphSelection;
+      const candidates = graph.nodes.map((node) => {
+        const point = layout.positions.get(node.path);
+        const label = labels.get(node.path);
+        const match = query && `${node.name} ${node.path}`.toLowerCase().includes(query);
+        return {
+          path: node.path,
+          x: (point.x - view.x) * scale + offsetX,
+          y: (point.y - view.y) * scale + offsetY + Math.min(11, 6 + Math.sqrt(node.degree) * 1.3) + 3,
+          width: Math.max(20, label.textContent.length * 7.2),
+          height: 17,
+          priority: node.path === graphView?.hover ? 120 : node.path === graphSelection ? 110 : match ? 100 : graph.neighbors.get(focus)?.has(node.path) ? 70 : node.degree * 2
+        };
+      });
+      const visible = window.MarkdownGraph.pickLabels(candidates, rect.width, rect.height);
+      labels.forEach((label, path) => label.classList.toggle('is-visible', visible.has(path)));
+    }
+    function refresh() {
+      const scale = screenScale();
+      for (const node of graph.nodes) {
+        const radius = Math.min(11, 6 + Math.sqrt(node.degree) * 1.3);
+        circles.get(node.path).setAttribute('r', String((options.mini ? Math.max(2.5, radius * .6) : radius) / scale));
+        if (!options.mini) {
+          nodes.get(node.path).querySelector('.graph-hit').setAttribute('r', String(17 / scale));
+          const label = labels.get(node.path);
+          label.setAttribute('font-size', String(12 / scale));
+          label.setAttribute('y', String((radius + 17) / scale));
+        }
+      }
+      refreshLabels();
+    }
+    function updateView() {
+      svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.width} ${view.height}`);
+      refresh();
+    }
+    function fitBox(box) {
+      const rect = svg.getBoundingClientRect();
+      const aspect = Math.max(.5, (rect.width || 900) / (rect.height || 600));
+      let width = Math.max(120, box.width); let height = Math.max(120, box.height);
+      if (width / height < aspect) width = height * aspect;
+      else height = width / aspect;
+      view.x = box.x + (box.width - width) / 2;
+      view.y = box.y + (box.height - height) / 2;
+      view.width = width; view.height = height; updateView();
+    }
+    if (!options.mini) {
+      let drag = null;
+      svg.addEventListener('pointerdown', (event) => {
+        if (event.target.closest('.graph-node-group')) return;
+        drag = { x: event.clientX, y: event.clientY, view: { ...view } };
+        svg.setPointerCapture(event.pointerId);
+        svg.classList.add('is-panning');
+      });
+      svg.addEventListener('pointermove', (event) => {
+        if (!drag) return;
+        const scale = screenScale();
+        view.x = drag.view.x - (event.clientX - drag.x) / scale;
+        view.y = drag.view.y - (event.clientY - drag.y) / scale;
+        updateView();
+      });
+      const stopDrag = () => { drag = null; svg.classList.remove('is-panning'); };
+      svg.addEventListener('pointerup', stopDrag); svg.addEventListener('pointercancel', stopDrag);
+      svg.addEventListener('wheel', (event) => {
+        event.preventDefault();
+        const point = svg.createSVGPoint(); point.x = event.clientX; point.y = event.clientY;
+        const target = point.matrixTransform(svg.getScreenCTM().inverse());
+        zoom(event.deltaY < 0 ? .85 : 1.18, target.x, target.y);
+      }, { passive: false });
+    }
+    function zoom(factor, x = view.x + view.width / 2, y = view.y + view.height / 2) {
+      const width = Math.max(70, Math.min(bounds.width * 4, view.width * factor));
+      const height = view.height * width / view.width;
+      view.x = x - (x - view.x) * width / view.width;
+      view.y = y - (y - view.y) * height / view.height;
+      view.width = width; view.height = height; updateView();
+    }
+    return {
+      svg, graph, nodes, edges, hover: null, zoom, refresh,
+      fit() { fitBox(bounds); },
+      focus(path) {
+        const point = layout.positions.get(path); if (!point) return;
+        const points = [path, ...graph.neighbors.get(path)].map((member) => layout.positions.get(member));
+        const xs = points.map((member) => member.x); const ys = points.map((member) => member.y);
+        const left = Math.min(...xs) - 70; const top = Math.min(...ys) - 70;
+        fitBox({ x: left, y: top, width: Math.max(...xs) - left + 70, height: Math.max(...ys) - top + 70 });
+      },
+      highlight() {
+        const query = document.getElementById('graph-search').value.trim().toLowerCase();
+        const focus = query ? null : this.hover || graphSelection;
+        const nearby = focus ? graph.neighbors.get(focus) : null;
+        for (const node of graph.nodes) {
+          const element = nodes.get(node.path);
+          const match = !query || `${node.name} ${node.path}`.toLowerCase().includes(query);
+          element.classList.toggle('is-dimmed', !match || Boolean(this.hover && node.path !== focus && !nearby?.has(node.path)));
+          element.classList.toggle('is-selected', node.path === graphSelection);
+          element.classList.toggle('is-neighbor', Boolean(focus && nearby?.has(node.path)));
+        }
+        for (const edge of graph.edges) {
+          const element = edges.get(JSON.stringify([edge.source, edge.target]));
+          const searchDim = query && !(`${graph.byPath.get(edge.source).name} ${edge.source}`.toLowerCase().includes(query) || `${graph.byPath.get(edge.target).name} ${edge.target}`.toLowerCase().includes(query));
+          element.classList.toggle('is-dimmed', Boolean(searchDim || (this.hover && edge.source !== focus && edge.target !== focus)));
+          element.classList.toggle('is-emphasized', Boolean(focus && (edge.source === focus || edge.target === focus)));
+        }
+        refreshLabels();
+      }
+    };
   }
 
-  function appendGraphNode(svg, point, path, active, showLabel) {
-    const group = document.createElementNS(svg.namespaceURI, 'g'); const circle = document.createElementNS(svg.namespaceURI, 'circle'); circle.setAttribute('cx', point.x); circle.setAttribute('cy', point.y); circle.setAttribute('r', active ? 14 : 8); circle.setAttribute('class', active ? 'graph-node graph-node--active' : 'graph-node');
-    const name = (vaultIndex.get(path) || {}).name || path; const title = document.createElementNS(svg.namespaceURI, 'title'); title.textContent = name; group.append(circle, title);
-    if (showLabel) { const label = document.createElementNS(svg.namespaceURI, 'text'); label.setAttribute('x', point.x); label.setAttribute('y', point.y + (active ? 27 : 20)); label.setAttribute('text-anchor', 'middle'); label.setAttribute('class', 'graph-label'); label.textContent = name.replace(/\.md$/i, '').slice(0, 24); group.appendChild(label); }
-    group.addEventListener('click', () => { if (!active) { closeGraphModal(); openFolderFile(path); } }); svg.appendChild(group);
+  function selectGraphNode(path, focus = false) {
+    if (!graphView?.graph.byPath.has(path)) return;
+    graphSelection = path;
+    graphView.highlight();
+    if (focus) graphView.focus(path);
+    const node = graphView.graph.byPath.get(path);
+    document.getElementById('graph-selection').textContent = `${node.path} · ${node.degree} connection${node.degree === 1 ? '' : 's'} · double-click to open`;
+    document.getElementById('graph-open-note').disabled = false;
   }
 
-  function openGraphModal() { if (!graphModal || !graphModalCanvas || !activeFolderPath || !vaultIndex.has(activeFolderPath)) return; const graph = collectLocalGraph(activeFolderPath); graphModalCanvas.replaceChildren(createGraphSvg(graph, { width: 900, height: 620, labels: true, limit: 28 })); const description = document.getElementById('graph-modal-description'); if (description) description.textContent = `${graph.nodes.length - 1} linked notes · click a node to open it`; graphModal.hidden = false; }
-  function closeGraphModal() { if (graphModal) graphModal.hidden = true; }
+  function renderGraphModal() {
+    if (!graphModal || graphModal.hidden) return;
+    const { graph, layout } = getFolderGraph();
+    graphModalCanvas.replaceChildren(); graphView = null;
+    document.getElementById('graph-modal-description').textContent = `${graph.nodes.length} related note${graph.nodes.length === 1 ? '' : 's'} · ${graph.edges.length} links`;
+    if (!graph.nodes.length) {
+      graphSelection = null;
+      document.getElementById('graph-open-note').disabled = true;
+      document.getElementById('graph-selection').textContent = 'Open a note from this folder to see its relations.';
+      graphModalCanvas.innerHTML = '<p class="graph-empty">Open a note from this folder to see its relations.</p>';
+    } else {
+      graphView = createGraphSvg(graph, layout);
+      graphModalCanvas.appendChild(graphView.svg);
+      graphView.fit();
+      if (graphSelection && graph.byPath.has(graphSelection)) selectGraphNode(graphSelection);
+      else if (activeFolderPath && graph.byPath.has(activeFolderPath)) selectGraphNode(activeFolderPath);
+      else { graphSelection = null; document.getElementById('graph-open-note').disabled = true; document.getElementById('graph-selection').textContent = 'Select a note to see its connections. Drag to pan · scroll to zoom.'; }
+      graphView.highlight();
+    }
+  }
+  function openGraphModal() {
+    if (!graphModal || !openedFolder) { showToast('Open a folder to explore its graph'); return; }
+    graphReturnFocus = document.activeElement;
+    graphSelection = activeFolderPath;
+    document.getElementById('graph-search').value = '';
+    graphModal.hidden = false;
+    renderGraphModal();
+    if (typeof ResizeObserver === 'function') {
+      graphResizeObserver = new ResizeObserver(() => graphView?.refresh());
+      graphResizeObserver.observe(graphModalCanvas);
+    }
+    document.getElementById('graph-search').focus();
+  }
+  function closeGraphModal() {
+    if (!graphModal) return;
+    graphResizeObserver?.disconnect(); graphResizeObserver = null;
+    graphModal.hidden = true; graphView = null;
+    if (graphReturnFocus?.isConnected) graphReturnFocus.focus();
+  }
+  function openSelectedGraphNote() {
+    if (!graphSelection) return;
+    const path = graphSelection;
+    closeGraphModal();
+    openFolderFile(path);
+  }
 
   function openWorkspaceModal(mode) { if (!workspaceModal || !workspaceQuery) return; workspaceMode = mode; workspaceSelectedIndex = 0; document.getElementById('workspace-modal-title').textContent = mode === 'command' ? 'Command palette' : mode === 'search' ? 'Search vault' : 'Quick switcher'; workspaceQuery.placeholder = mode === 'command' ? 'Type a command…' : mode === 'search' ? 'Search note contents…' : 'Search notes…'; workspaceQuery.value = ''; workspaceModal.hidden = false; renderWorkspaceResults(); workspaceQuery.focus(); }
   function closeWorkspaceModal() { if (workspaceModal) workspaceModal.hidden = true; editor.focus(); }
@@ -1440,12 +1698,15 @@
   function relativeMarkdownPath(fromPath, targetPath) { const from = fromPath ? fromPath.split('/').slice(0, -1) : []; const target = targetPath.split('/'); while (from.length && target.length && from[0] === target[0]) { from.shift(); target.shift(); } return `${from.map(() => '..').concat(target).join('/')}`.split('/').map(encodeURIComponent).join('/'); }
 
   async function rebuildVaultIndex() {
-    vaultIndex = new Map(); if (!openedFolder) return;
+    vaultIndex = new Map(); graphCache = null; if (!openedFolder) return;
     const entries = Array.from(folderEntries.entries());
+    const openDocsByPath = new Map(Object.values(documents)
+      .filter((doc) => doc.folderId === openedFolder.id && doc.folderPath && folderEntries.has(doc.folderPath))
+      .map((doc) => [doc.folderPath, doc]));
     await Promise.all(entries.map(async ([path, entry]) => {
-      const id = folderDocumentIds.get(path);
-      let content = id && documents[id] ? documents[id].content : '';
-      if (!content) {
+      const openDoc = openDocsByPath.get(path);
+      let content = openDoc ? openDoc.content : '';
+      if (!openDoc) {
         try { const file = entry.handle ? await entry.handle.getFile() : entry.file; content = await file.text(); } catch (error) { console.warn(`Could not index ${path}`, error); }
       }
       vaultIndex.set(path, makeVaultIndexEntry(path, entry.name, content));
@@ -1454,15 +1715,36 @@
   function updateActiveVaultIndex(shouldRender = true) {
     if (!activeFolderPath || !folderEntries.has(activeFolderPath)) return;
     const doc = getCurrentDocument();
-    vaultIndex.set(activeFolderPath, makeVaultIndexEntry(activeFolderPath, folderEntries.get(activeFolderPath).name, doc ? doc.content : editor.value));
+    const previous = vaultIndex.get(activeFolderPath);
+    const next = makeVaultIndexEntry(activeFolderPath, folderEntries.get(activeFolderPath).name, doc ? doc.content : editor.value);
+    vaultIndex.set(activeFolderPath, next);
+    if (!previous || previous.links.map((link) => link.path).join('\0') !== next.links.map((link) => link.path).join('\0')) graphCache = null;
     if (shouldRender) renderContextPanels();
   }
-  function makeVaultIndexEntry(path, name, content) { const markdown = String(content || ''); const links = []; const headings = []; markdown.replace(/^#{1,6}\s+(.+)$/gm, (_, heading) => { headings.push(heading.trim()); return _; }); markdown.replace(/\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)/g, (_, href) => { const target = resolveVaultLink(path, href); if (target) links.push(target); return _; }); return { path, name, headings, text: markdown.replace(/[`*_#>[\]()]/g, ' ').replace(/\s+/g, ' ').trim(), links }; }
+  function makeVaultIndexEntry(path, name, content) {
+    const markdown = String(content || ''); const headings = [];
+    markdown.replace(/^#{1,6}\s+(.+)$/gm, (_, heading) => { headings.push(heading.trim()); return _; });
+    const links = window.MarkdownGraph.extractLinks(markdown, (href) => resolveVaultLink(path, href), (title) => resolveWikiLink(path, title), marked);
+    return { path, name, headings, text: markdown.replace(/[`*_#>[\]()]/g, ' ').replace(/\s+/g, ' ').trim(), links };
+  }
+  function resolveWikiLink(fromPath, title) {
+    if (!title) return null;
+    const directory = fromPath.includes('/') ? fromPath.slice(0, fromPath.lastIndexOf('/')) : '';
+    const local = resolveVaultLink(fromPath, title);
+    if (local) return local;
+    const root = resolveVaultLink('', title);
+    if (root) return root;
+    const wanted = title.replace(/\.(?:md|markdown)$/i, '').toLowerCase();
+    const matches = Array.from(folderEntries.keys()).filter((path) => path.split('/').pop().replace(/\.(?:md|markdown)$/i, '').toLowerCase() === wanted);
+    if (matches.length === 1) return { path: matches[0] };
+    const nearby = matches.filter((path) => path.startsWith(`${directory}/`));
+    return nearby.length === 1 ? { path: nearby[0] } : null;
+  }
   function resolveVaultLink(fromPath, href) {
     if (!href || /^(?:[a-z][a-z0-9+.-]*:|#)/i.test(href)) return null;
-    const withoutHash = href.split('#')[0]; const directory = fromPath.includes('/') ? fromPath.slice(0, fromPath.lastIndexOf('/')) : '';
+    const withoutHash = href.split('#')[0].split('?')[0]; const directory = fromPath.includes('/') ? fromPath.slice(0, fromPath.lastIndexOf('/')) : '';
     let decoded; try { decoded = decodeURIComponent(withoutHash); } catch (error) { return null; }
-    const base = normalizeFolderPath(`${directory}/${decoded}`); if (!base) return null;
+    const base = normalizeFolderPath(decoded.startsWith('/') ? decoded.slice(1) : `${directory}/${decoded}`); if (!base) return null;
     const candidates = /\.(?:md|markdown)$/i.test(base) ? [base] : [base, `${base}.md`, `${base}.markdown`];
     for (const candidate of candidates) { const resolved = folderPathLookup.get(candidate.toLowerCase()); if (resolved) return { path: resolved }; }
     return null;
@@ -3093,7 +3375,12 @@
   async function triggerOpenFolder(options = {}) {
     if (supportsDirectoryAccess) {
       try {
-        const directoryHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+        const pickerOptions = { mode: 'readwrite', id: 'markdown-studio-folder' };
+        const lastFolderHandle = openedFolder?.handle || rememberedDirectoryHandle;
+        if (lastFolderHandle) {
+          pickerOptions.startIn = lastFolderHandle;
+        }
+        const directoryHandle = await window.showDirectoryPicker(pickerOptions);
         if (!directoryHandle) {
           return;
         }
@@ -3489,6 +3776,7 @@
       folderPathsByDocumentId.set(documentId, path);
       fileHandles.set(documentId, handle);
       vaultIndex.set(path, makeVaultIndexEntry(path, fileName, ''));
+      graphCache = null;
       renderFolderExplorer();
       setCurrentDocument(documentId, { focus: true });
       saveFolderState();
