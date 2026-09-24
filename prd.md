@@ -40,6 +40,8 @@ Provide a **self-contained, offline Markdown editor** (HTML + JS + CSS, no backe
 - **Theme Toggle**: Light/Dark themes, instant switch, persisted in `localStorage`.
 - **Syntax Highlighting**: Applies highlight.js styling to code blocks when the library is available.
 - **Mermaid Diagrams**: Fenced code blocks tagged `mermaid` render as diagrams when Mermaid is available; fall back to code blocks if the library is missing.
+- **Local Vault Workspace**: An opened folder acts as one local vault with persistent note tabs, Quick Switcher, Command Palette, full-text vault search, a heading outline, linked backlinks, and a one-hop local graph.
+- **Portable Note Links**: Link picker inserts relative standard Markdown links; generated links remain interoperable outside the app.
 
 ### File Handling
 - **Open / Save / Save As**:
@@ -88,7 +90,7 @@ Provide a **self-contained, offline Markdown editor** (HTML + JS + CSS, no backe
 ---
 
 ## 4. Non-Functional Requirements
-- **Offline Only**: All JS/CSS bundled locally. No backend. No CDN dependencies.
+- **Offline Only**: All JS/CSS bundled locally in `vendor/`. No backend or CDN dependencies.
 - **Compatibility**: Edge (latest), Safari (latest stable), Chrome (latest).
 - **Performance**: Handle docs up to ~1MB (~10k lines).
 - **Security**:
@@ -113,9 +115,8 @@ Provide a **self-contained, offline Markdown editor** (HTML + JS + CSS, no backe
 ---
 
 ## 6. Open Questions
-1. When do we bundle third-party libraries locally (marked, DOMPurify, highlight.js + theme CSS, Mermaid, Turndown) to meet the offline mandate?
-2. Should the app remember **cursor/scroll positions** across sessions?
+1. Should the app add an opt-in index refresh action for very large folders?
 
 
 ## 7. Gaps to be closed
-- **Offline dependencies**: `index.html` still loads `marked`, `DOMPurify`, `highlight.js` (and its CSS), `Mermaid`, and `Turndown` from public CDNs, breaking the offline-only requirement. Bundle these assets locally with integrity checks and update the HTML to reference local files; current CDN loads are download-only and do not post document content.
+- **Offline dependencies**: Completed. `marked`, `DOMPurify`, `highlight.js` (and its CSS), `Mermaid`, and `Turndown` are committed under `vendor/` and loaded locally.

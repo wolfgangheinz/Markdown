@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Offline Markdown Editor</title>
   <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/github.min.css">
+  <link rel="stylesheet" href="vendor/github.min.css">
 </head>
 <body>
   <header class="app-header">
@@ -55,16 +55,17 @@
         <button type="button" class="file-btn" data-action="copyRich" title="Copy Rendered HTML" aria-label="Copy rendered HTML">Copy Rich</button>
         <button type="button" class="file-btn" data-action="clearAutosave" title="Clear Autosave" aria-label="Clear autosaved draft">Clear Draft</button>
         <button type="button" class="file-btn" data-action="manageDrafts" title="Manage drafts" aria-label="Manage autosaved drafts">Drafts</button>
+        <button type="button" class="file-btn" data-action="livePreview" title="Toggle Live Preview" aria-label="Toggle Live Preview">Live Preview</button>
         </div>
       </details>
-      </div>
       <button type="button" class="theme-toggle" aria-label="Toggle light or dark theme" aria-pressed="false">
         <span class="icon sun" aria-hidden="true">☀</span>
         <span class="icon moon" aria-hidden="true">☾</span>
       </button>
-  <div class="view-toggle" role="group" aria-label="Editor view">
+    </div>
+    <div class="responsive-toggle view-toggle" role="group" aria-label="Editor view">
       <button type="button" data-view="split" aria-pressed="true">Split</button>
-      <button type="button" data-view="wysiwyg" aria-pressed="false">Visual (experimental)</button>
+      <button type="button" data-view="live" aria-pressed="false">Visual</button>
       <button type="button" data-view="editor" aria-pressed="false">Markdown</button>
       <button type="button" data-view="preview" aria-pressed="false">Preview</button>
     </div>
@@ -74,7 +75,7 @@
       <div class="file-explorer__header">
         <span>Explorer</span>
         <strong class="file-explorer__name">No folder open</strong>
-        <button type="button" class="file-explorer__new-file" data-action="newFolderFile" title="Create Markdown file" aria-label="Create Markdown file" disabled>+</button>
+        <button type="button" class="file-explorer__new-file" data-action="newFolderFile" title="Create Markdown file in selected folder" aria-label="Create Markdown file in selected folder" disabled>+</button>
         <button type="button" class="file-explorer__toggle" data-action="toggleExplorer" title="Hide Explorer" aria-label="Hide Explorer" aria-pressed="true">‹</button>
       </div>
       <span class="file-explorer__rail-label" aria-hidden="true">Explorer</span>
@@ -86,6 +87,9 @@
       </div>
     </aside>
     <div class="explorer-divider" role="separator" aria-orientation="vertical" aria-label="Resize Explorer" aria-valuemin="140" aria-valuemax="480" aria-valuenow="240" tabindex="0"></div>
+    <section class="workspace-center" aria-label="Workspace">
+      <div class="workspace-tabs" role="tablist" aria-label="Open notes"></div>
+      <div class="workspace-panes">
     <section class="pane editor-pane" aria-label="Markdown editor">
       <pre class="editor-syntax" aria-hidden="true"><code></code></pre>
       <textarea id="editor" spellcheck="false" aria-label="Markdown editor"></textarea>
@@ -94,6 +98,19 @@
     <section class="pane preview-pane" aria-label="Markdown preview" aria-live="polite">
       <article id="preview" class="markdown-body"></article>
     </section>
+      </div>
+    </section>
+    <aside class="context-sidebar" aria-label="Note context">
+      <div class="context-sidebar__tabs" role="tablist" aria-label="Note context panels">
+        <button type="button" data-context="outline" role="tab" aria-selected="true">Outline</button>
+        <button type="button" data-context="backlinks" role="tab" aria-selected="false">Backlinks</button>
+        <button type="button" data-context="graph" role="tab" aria-selected="false">Graph</button>
+        <button type="button" data-action="toggleContext" class="context-sidebar__toggle" aria-label="Hide note context">›</button>
+      </div>
+      <section class="context-panel" data-panel="outline" role="tabpanel"><div class="context-panel__content" id="outline-panel"></div></section>
+      <section class="context-panel" data-panel="backlinks" role="tabpanel" hidden><div class="context-panel__content" id="backlinks-panel"></div></section>
+      <section class="context-panel" data-panel="graph" role="tabpanel" hidden><div class="context-panel__content graph-panel" id="graph-panel"></div></section>
+    </aside>
   </main>
   <div class="toast" role="status" aria-live="polite" hidden></div>
   <input type="file" id="file-input" accept=".md,.markdown,.txt,.html,.htm" hidden>
@@ -117,12 +134,27 @@
       </div>
     </div>
   </div>
+  <div class="workspace-modal" id="workspace-modal" hidden>
+    <div class="workspace-modal__backdrop" data-action="closeWorkspaceModal"></div>
+    <section class="workspace-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="workspace-modal-title">
+      <header><h2 id="workspace-modal-title">Quick switcher</h2><button type="button" data-action="closeWorkspaceModal" aria-label="Close">×</button></header>
+      <input id="workspace-query" type="search" autocomplete="off" placeholder="Search notes…" aria-label="Search notes">
+      <div id="workspace-results" class="workspace-results" role="listbox"></div>
+    </section>
+  </div>
+  <div class="graph-modal" id="graph-modal" hidden>
+    <div class="graph-modal__backdrop" data-action="closeGraphModal"></div>
+    <section class="graph-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="graph-modal-title">
+      <header><div><h2 id="graph-modal-title">Local graph</h2><p id="graph-modal-description">Connected notes</p></div><button type="button" data-action="closeGraphModal" aria-label="Close graph">×</button></header>
+      <div id="graph-modal-canvas" class="graph-modal__canvas"></div>
+    </section>
+  </div>
   
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/lib/common.min.js" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/turndown@7.1.2/dist/turndown.min.js" defer></script>
+  <script src="vendor/marked.min.js" defer></script>
+  <script src="vendor/purify.min.js" defer></script>
+  <script src="vendor/highlight-common.min.js" defer></script>
+  <script src="vendor/mermaid.min.js" defer></script>
+  <script src="vendor/turndown.js" defer></script>
   <script src="app.js" defer></script>
 </body>
 </html>

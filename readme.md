@@ -5,16 +5,16 @@ A self-contained, browser-based Markdown editor designed for restricted environm
 
 Features
 --------
-- A compact, grouped formatting ribbon with familiar bold, italic, list, quote, link, table, and code controls; file and export actions live in one File menu.
-- Split-view editor with resizable panes, plus a **Visual** WYSIWYG mode for editing the rendered document directly. Markdown typed in Visual mode (for example `**bold**`, `# Heading`, or a list marker) is rendered after a short pause and remains synchronized with the Markdown source.
+- Compact grouped formatting toolbar, File menu, and Split / Visual / Markdown / Preview modes.
+- Local-vault workspace with persistent tabs, Quick Switcher (`Ctrl/⌘+O`), Command Palette (`Ctrl/⌘+P`), vault search (`Ctrl/⌘+Shift+F`), and Outline / Backlinks / local graph panels.
 - GitHub-flavoured Markdown rendering (headings, lists, tables, task lists, code blocks, etc.).
 - Toolbar and keyboard shortcuts for common formatting, including highlight and fenced code insertion.
 - Autosave to `localStorage`, plus open/save via the native File System Access API (with download fallbacks).
-- Create Markdown files beside the active file from the Explorer’s **+** button when the opened folder grants write access.
+- Create a Markdown file in the selected Explorer folder with the **+** button when folder write permission is available.
 - Syntax-highlighted code blocks powered by Highlight.js.
 - Copy rendered HTML, export standalone HTML, or print to PDF.
 - Light/dark themes and toast notifications for key actions.
-- Libraries such as Marked, DOMPurify, Highlight.js, Mermaid, and Turndown are currently fetched from CDNs but run fully in your browser; no document contents are sent to external services.
+- Marked, DOMPurify, Highlight.js, Mermaid, and Turndown are bundled in `vendor/`; no document contents or runtime dependencies leave the machine.
 
 Getting Started
 ---------------
@@ -51,6 +51,9 @@ Keyboard Shortcuts
 - **Code Block** `Ctrl/⌘ + \``
 - **Link** `Ctrl/⌘ + K`
 - **Undo** `Ctrl/⌘ + Z` (also available via the toolbar)
+- **Quick Switcher** `Ctrl/⌘ + O` (when a folder vault is open)
+- **Command Palette** `Ctrl/⌘ + P`
+- **Vault Search** `Ctrl/⌘ + Shift + F`
 
 Export & Copy Options
 ---------------------
