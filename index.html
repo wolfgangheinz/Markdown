@@ -16,25 +16,34 @@
       <span id="document-title-help" class="sr-only">Press Enter or leave the field to save the new name.</span>
     </div>
     <div class="header-groups">
-      <div class="pane-toolbar editor-toolbar" role="toolbar" aria-label="Editor formatting toolbar">
-        <button type="button" class="tool-btn" data-action="bold" title="Bold (Ctrl/Cmd+B)" aria-label="Bold"><span>Bold</span></button>
-        <button type="button" class="tool-btn" data-action="italic" title="Italic (Ctrl/Cmd+I)" aria-label="Italic"><span>Italic</span></button>
-        <button type="button" class="tool-btn" data-action="inlineCode" title="Inline Code" aria-label="Inline code"><span>`code`</span></button>
-        <button type="button" class="tool-btn" data-action="highlight" title="Highlight" aria-label="Highlight text"><span>Mark</span></button>
-        <button type="button" class="tool-btn" data-action="strikethrough" title="Strikethrough" aria-label="Strikethrough"><span>Strike</span></button>
-        <button type="button" class="tool-btn" data-action="heading" title="Heading (Ctrl/Cmd+1)" aria-label="Heading"><span>H1</span></button>
-        <button type="button" class="tool-btn" data-action="code" title="Code Block (Ctrl/Cmd+` )" aria-label="Code Block"><span>&lt;/&gt;</span></button>
-        <button type="button" class="tool-btn" data-action="link" title="Link (Ctrl/Cmd+K)" aria-label="Insert Link"><span>Link</span></button>
-        <button type="button" class="tool-btn" data-action="image" title="Image" aria-label="Insert image"><span>Image</span></button>
-        <button type="button" class="tool-btn" data-action="ul" title="Bulleted List" aria-label="Bulleted List"><span>• List</span></button>
-        <button type="button" class="tool-btn" data-action="ol" title="Numbered List" aria-label="Numbered List"><span>1. List</span></button>
-        <button type="button" class="tool-btn" data-action="quote" title="Blockquote" aria-label="Blockquote"><span>"</span></button>
-        <button type="button" class="tool-btn" data-action="table" title="Table" aria-label="Table"><span>Table</span></button>
-        <button type="button" class="tool-btn" data-action="task" title="Task List" aria-label="Task List"><span>[ ]</span></button>
+      <div class="pane-toolbar editor-toolbar" role="toolbar" aria-label="Text formatting">
+        <div class="toolbar-group" role="group" aria-label="History">
+          <button type="button" class="tool-btn tool-btn--icon" data-action="undo" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo">↶</button>
+          <button type="button" class="tool-btn tool-btn--icon" data-action="redo" title="Redo (Ctrl/Cmd+Shift+Z)" aria-label="Redo">↷</button>
+        </div>
+        <div class="toolbar-group" role="group" aria-label="Text style">
+          <button type="button" class="tool-btn tool-btn--icon tool-btn--bold" data-action="bold" title="Bold (Ctrl/Cmd+B)" aria-label="Bold">B</button>
+          <button type="button" class="tool-btn tool-btn--icon tool-btn--italic" data-action="italic" title="Italic (Ctrl/Cmd+I)" aria-label="Italic">I</button>
+          <button type="button" class="tool-btn tool-btn--icon tool-btn--strike" data-action="strikethrough" title="Strikethrough" aria-label="Strikethrough">S</button>
+          <button type="button" class="tool-btn tool-btn--icon" data-action="highlight" title="Highlight" aria-label="Highlight text">✦</button>
+          <button type="button" class="tool-btn tool-btn--code" data-action="inlineCode" title="Inline code" aria-label="Inline code">&lt;/&gt;</button>
+        </div>
+        <div class="toolbar-group" role="group" aria-label="Structure">
+          <button type="button" class="tool-btn" data-action="heading" title="Heading (Ctrl/Cmd+1)" aria-label="Heading">Heading</button>
+          <button type="button" class="tool-btn tool-btn--icon" data-action="ul" title="Bulleted list" aria-label="Bulleted list">☷</button>
+          <button type="button" class="tool-btn tool-btn--icon" data-action="ol" title="Numbered list" aria-label="Numbered list">☷₁</button>
+          <button type="button" class="tool-btn tool-btn--icon" data-action="quote" title="Quote" aria-label="Quote">❝</button>
+        </div>
+        <div class="toolbar-group" role="group" aria-label="Insert">
+          <button type="button" class="tool-btn tool-btn--icon" data-action="link" title="Insert link (Ctrl/Cmd+K)" aria-label="Insert link">↗</button>
+          <button type="button" class="tool-btn tool-btn--icon" data-action="image" title="Insert image" aria-label="Insert image">▧</button>
+          <button type="button" class="tool-btn tool-btn--icon" data-action="table" title="Insert table" aria-label="Insert table">▦</button>
+          <button type="button" class="tool-btn tool-btn--icon" data-action="code" title="Code block" aria-label="Code block">{ }</button>
+        </div>
       </div>
-      <div class="pane-toolbar file-toolbar" role="group" aria-label="File and export actions">
-        <button type="button" class="file-btn" data-action="undo" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo">Undo</button>
-        <button type="button" class="file-btn" data-action="redo" title="Redo (Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y)" aria-label="Redo">Redo</button>
+      <details class="app-menu">
+        <summary aria-label="Document and export menu">••• <span>File</span></summary>
+        <div class="pane-toolbar file-toolbar" role="group" aria-label="File and export actions">
         <button type="button" class="file-btn" data-action="new" title="New document" aria-label="New document">New</button>
         <button type="button" class="file-btn" data-action="open" title="Open" aria-label="Open file">Open</button>
         <button type="button" class="file-btn" data-action="openFolder" title="Open folder" aria-label="Open folder">Open Folder</button>
@@ -46,14 +55,17 @@
         <button type="button" class="file-btn" data-action="copyRich" title="Copy Rendered HTML" aria-label="Copy rendered HTML">Copy Rich</button>
         <button type="button" class="file-btn" data-action="clearAutosave" title="Clear Autosave" aria-label="Clear autosaved draft">Clear Draft</button>
         <button type="button" class="file-btn" data-action="manageDrafts" title="Manage drafts" aria-label="Manage autosaved drafts">Drafts</button>
+        </div>
+      </details>
       </div>
       <button type="button" class="theme-toggle" aria-label="Toggle light or dark theme" aria-pressed="false">
         <span class="icon sun" aria-hidden="true">☀</span>
         <span class="icon moon" aria-hidden="true">☾</span>
       </button>
-    </div>
-    <div class="responsive-toggle">
-      <button type="button" data-view="editor" aria-pressed="true">Editor</button>
+  <div class="view-toggle" role="group" aria-label="Editor view">
+      <button type="button" data-view="split" aria-pressed="true">Split</button>
+      <button type="button" data-view="wysiwyg" aria-pressed="false">Visual (experimental)</button>
+      <button type="button" data-view="editor" aria-pressed="false">Markdown</button>
       <button type="button" data-view="preview" aria-pressed="false">Preview</button>
     </div>
   </header>
@@ -62,6 +74,7 @@
       <div class="file-explorer__header">
         <span>Explorer</span>
         <strong class="file-explorer__name">No folder open</strong>
+        <button type="button" class="file-explorer__new-file" data-action="newFolderFile" title="Create Markdown file" aria-label="Create Markdown file" disabled>+</button>
         <button type="button" class="file-explorer__toggle" data-action="toggleExplorer" title="Hide Explorer" aria-label="Hide Explorer" aria-pressed="true">‹</button>
       </div>
       <span class="file-explorer__rail-label" aria-hidden="true">Explorer</span>

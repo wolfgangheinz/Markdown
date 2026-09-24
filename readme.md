@@ -5,10 +5,12 @@ A self-contained, browser-based Markdown editor designed for restricted environm
 
 Features
 --------
-- Split-view editor with resizable panes and responsive preview toggle.
+- A compact, grouped formatting ribbon with familiar bold, italic, list, quote, link, table, and code controls; file and export actions live in one File menu.
+- Split-view editor with resizable panes, plus a **Visual** WYSIWYG mode for editing the rendered document directly. Markdown typed in Visual mode (for example `**bold**`, `# Heading`, or a list marker) is rendered after a short pause and remains synchronized with the Markdown source.
 - GitHub-flavoured Markdown rendering (headings, lists, tables, task lists, code blocks, etc.).
 - Toolbar and keyboard shortcuts for common formatting, including highlight and fenced code insertion.
 - Autosave to `localStorage`, plus open/save via the native File System Access API (with download fallbacks).
+- Create Markdown files beside the active file from the Explorer’s **+** button when the opened folder grants write access.
 - Syntax-highlighted code blocks powered by Highlight.js.
 - Copy rendered HTML, export standalone HTML, or print to PDF.
 - Light/dark themes and toast notifications for key actions.
@@ -36,7 +38,7 @@ git clone https://github.com/<your-account>/<your-repo>.git
 
 1. Open the extracted folder.
 2. Double-click `index.html`, or drag it into a modern browser (Edge, Chrome, Safari).
-3. Start typing in the left pane; the preview updates automatically.
+3. Start typing in the Markdown pane; the preview updates automatically. Use **Visual** in the view switcher to write directly in the rendered document, or **Split** to see both representations.
 
 The app runs locally—no server is required. For best results in Edge/Chrome, allow the File System Access prompt when saving so the editor can write directly to disk. Safari users get automatic download fallbacks.
 
