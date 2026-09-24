@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Offline Markdown Editor</title>
   <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/github.min.css">
+  <link rel="stylesheet" href="vendor/github.min.css">
 </head>
 <body>
   <header class="app-header">
@@ -16,21 +16,30 @@
       <span id="document-title-help" class="sr-only">Press Enter or leave the field to save the new name.</span>
     </div>
     <div class="header-groups">
-      <div class="pane-toolbar editor-toolbar" role="toolbar" aria-label="Editor formatting toolbar">
-        <button type="button" class="tool-btn" data-action="bold" title="Bold (Ctrl/Cmd+B)" aria-label="Bold"><span>Bold</span></button>
-        <button type="button" class="tool-btn" data-action="italic" title="Italic (Ctrl/Cmd+I)" aria-label="Italic"><span>Italic</span></button>
-        <button type="button" class="tool-btn" data-action="inlineCode" title="Inline Code" aria-label="Inline code"><span>`code`</span></button>
-        <button type="button" class="tool-btn" data-action="highlight" title="Highlight" aria-label="Highlight text"><span>Mark</span></button>
-        <button type="button" class="tool-btn" data-action="strikethrough" title="Strikethrough" aria-label="Strikethrough"><span>Strike</span></button>
-        <button type="button" class="tool-btn" data-action="heading" title="Heading (Ctrl/Cmd+1)" aria-label="Heading"><span>H1</span></button>
-        <button type="button" class="tool-btn" data-action="code" title="Code Block (Ctrl/Cmd+` )" aria-label="Code Block"><span>&lt;/&gt;</span></button>
-        <button type="button" class="tool-btn" data-action="link" title="Link (Ctrl/Cmd+K)" aria-label="Insert Link"><span>Link</span></button>
-        <button type="button" class="tool-btn" data-action="image" title="Image" aria-label="Insert image"><span>Image</span></button>
-        <button type="button" class="tool-btn" data-action="ul" title="Bulleted List" aria-label="Bulleted List"><span>• List</span></button>
-        <button type="button" class="tool-btn" data-action="ol" title="Numbered List" aria-label="Numbered List"><span>1. List</span></button>
-        <button type="button" class="tool-btn" data-action="quote" title="Blockquote" aria-label="Blockquote"><span>"</span></button>
-        <button type="button" class="tool-btn" data-action="table" title="Table" aria-label="Table"><span>Table</span></button>
-        <button type="button" class="tool-btn" data-action="task" title="Task List" aria-label="Task List"><span>[ ]</span></button>
+      <div class="pane-toolbar editor-toolbar" role="toolbar" aria-label="Text formatting">
+        <div class="toolbar-group" role="group" aria-label="History">
+          <button type="button" class="tool-btn tool-btn--icon" data-action="undo" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo">↶</button>
+          <button type="button" class="tool-btn tool-btn--icon" data-action="redo" title="Redo (Ctrl/Cmd+Shift+Z)" aria-label="Redo">↷</button>
+        </div>
+        <div class="toolbar-group" role="group" aria-label="Text style">
+          <button type="button" class="tool-btn tool-btn--icon tool-btn--bold" data-action="bold" title="Bold (Ctrl/Cmd+B)" aria-label="Bold">B</button>
+          <button type="button" class="tool-btn tool-btn--icon tool-btn--italic" data-action="italic" title="Italic (Ctrl/Cmd+I)" aria-label="Italic">I</button>
+          <button type="button" class="tool-btn tool-btn--icon tool-btn--strike" data-action="strikethrough" title="Strikethrough" aria-label="Strikethrough">S</button>
+          <button type="button" class="tool-btn tool-btn--icon" data-action="highlight" title="Highlight" aria-label="Highlight text">✦</button>
+          <button type="button" class="tool-btn tool-btn--code" data-action="inlineCode" title="Inline code" aria-label="Inline code">&lt;/&gt;</button>
+        </div>
+        <div class="toolbar-group" role="group" aria-label="Structure">
+          <button type="button" class="tool-btn" data-action="heading" title="Heading (Ctrl/Cmd+1)" aria-label="Heading">Heading</button>
+          <button type="button" class="tool-btn tool-btn--icon" data-action="ul" title="Bulleted list" aria-label="Bulleted list">☷</button>
+          <button type="button" class="tool-btn tool-btn--icon" data-action="ol" title="Numbered list" aria-label="Numbered list">☷₁</button>
+          <button type="button" class="tool-btn tool-btn--icon" data-action="quote" title="Quote" aria-label="Quote">❝</button>
+        </div>
+        <div class="toolbar-group" role="group" aria-label="Insert">
+          <button type="button" class="tool-btn tool-btn--icon" data-action="link" title="Insert link (Ctrl/Cmd+K)" aria-label="Insert link">↗</button>
+          <button type="button" class="tool-btn tool-btn--icon" data-action="image" title="Insert image" aria-label="Insert image">▧</button>
+          <button type="button" class="tool-btn tool-btn--icon" data-action="table" title="Insert table" aria-label="Insert table">▦</button>
+          <button type="button" class="tool-btn tool-btn--icon" data-action="code" title="Code block" aria-label="Code block">{ }</button>
+        </div>
       </div>
       <div class="pane-toolbar file-toolbar" role="group" aria-label="File and export actions">
         <button type="button" class="file-btn" data-action="undo" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo">Undo</button>
@@ -46,6 +55,7 @@
         <button type="button" class="file-btn" data-action="copyRich" title="Copy Rendered HTML" aria-label="Copy rendered HTML">Copy Rich</button>
         <button type="button" class="file-btn" data-action="clearAutosave" title="Clear Autosave" aria-label="Clear autosaved draft">Clear Draft</button>
         <button type="button" class="file-btn" data-action="manageDrafts" title="Manage drafts" aria-label="Manage autosaved drafts">Drafts</button>
+        <button type="button" class="file-btn" data-action="livePreview" title="Toggle Live Preview" aria-label="Toggle Live Preview">Live Preview</button>
       </div>
       <button type="button" class="theme-toggle" aria-label="Toggle light or dark theme" aria-pressed="false">
         <span class="icon sun" aria-hidden="true">☀</span>
@@ -54,6 +64,7 @@
     </div>
     <div class="responsive-toggle">
       <button type="button" data-view="editor" aria-pressed="true">Editor</button>
+      <button type="button" data-view="live" aria-pressed="false">Live Preview</button>
       <button type="button" data-view="preview" aria-pressed="false">Preview</button>
     </div>
   </header>
@@ -73,13 +84,30 @@
       </div>
     </aside>
     <div class="explorer-divider" role="separator" aria-orientation="vertical" aria-label="Resize Explorer" aria-valuemin="140" aria-valuemax="480" aria-valuenow="240" tabindex="0"></div>
+    <section class="workspace-center" aria-label="Workspace">
+      <div class="workspace-tabs" role="tablist" aria-label="Open notes"></div>
+      <div class="workspace-panes">
     <section class="pane editor-pane" aria-label="Markdown editor">
+      <pre class="editor-syntax" aria-hidden="true"><code></code></pre>
       <textarea id="editor" spellcheck="false" aria-label="Markdown editor"></textarea>
     </section>
     <div class="divider" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize editor and preview panels"></div>
     <section class="pane preview-pane" aria-label="Markdown preview" aria-live="polite">
       <article id="preview" class="markdown-body"></article>
     </section>
+      </div>
+    </section>
+    <aside class="context-sidebar" aria-label="Note context">
+      <div class="context-sidebar__tabs" role="tablist" aria-label="Note context panels">
+        <button type="button" data-context="outline" role="tab" aria-selected="true">Outline</button>
+        <button type="button" data-context="backlinks" role="tab" aria-selected="false">Backlinks</button>
+        <button type="button" data-context="graph" role="tab" aria-selected="false">Graph</button>
+        <button type="button" data-action="toggleContext" class="context-sidebar__toggle" aria-label="Hide note context">›</button>
+      </div>
+      <section class="context-panel" data-panel="outline" role="tabpanel"><div class="context-panel__content" id="outline-panel"></div></section>
+      <section class="context-panel" data-panel="backlinks" role="tabpanel" hidden><div class="context-panel__content" id="backlinks-panel"></div></section>
+      <section class="context-panel" data-panel="graph" role="tabpanel" hidden><div class="context-panel__content graph-panel" id="graph-panel"></div></section>
+    </aside>
   </main>
   <div class="toast" role="status" aria-live="polite" hidden></div>
   <input type="file" id="file-input" accept=".md,.markdown,.txt,.html,.htm" hidden>
@@ -103,12 +131,27 @@
       </div>
     </div>
   </div>
+  <div class="workspace-modal" id="workspace-modal" hidden>
+    <div class="workspace-modal__backdrop" data-action="closeWorkspaceModal"></div>
+    <section class="workspace-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="workspace-modal-title">
+      <header><h2 id="workspace-modal-title">Quick switcher</h2><button type="button" data-action="closeWorkspaceModal" aria-label="Close">×</button></header>
+      <input id="workspace-query" type="search" autocomplete="off" placeholder="Search notes…" aria-label="Search notes">
+      <div id="workspace-results" class="workspace-results" role="listbox"></div>
+    </section>
+  </div>
+  <div class="graph-modal" id="graph-modal" hidden>
+    <div class="graph-modal__backdrop" data-action="closeGraphModal"></div>
+    <section class="graph-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="graph-modal-title">
+      <header><div><h2 id="graph-modal-title">Local graph</h2><p id="graph-modal-description">Connected notes</p></div><button type="button" data-action="closeGraphModal" aria-label="Close graph">×</button></header>
+      <div id="graph-modal-canvas" class="graph-modal__canvas"></div>
+    </section>
+  </div>
   
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/lib/common.min.js" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/turndown@7.1.2/dist/turndown.min.js" defer></script>
+  <script src="vendor/marked.min.js" defer></script>
+  <script src="vendor/purify.min.js" defer></script>
+  <script src="vendor/highlight-common.min.js" defer></script>
+  <script src="vendor/mermaid.min.js" defer></script>
+  <script src="vendor/turndown.js" defer></script>
   <script src="app.js" defer></script>
 </body>
 </html>
