@@ -38,7 +38,7 @@ git clone https://github.com/<your-account>/<your-repo>.git
 
 1. Open the extracted folder.
 2. Double-click `index.html`, or drag it into a modern browser (Edge, Chrome, Safari).
-3. Start typing in the left pane; the preview updates automatically.
+3. Start typing in the Markdown pane; the preview updates automatically. Use **Visual** in the view switcher to write directly in the rendered document, or **Split** to see both representations.
 
 The app runs locally—no server is required. For best results in Edge/Chrome, allow the File System Access prompt when saving so the editor can write directly to disk. Safari users get automatic download fallbacks.
 
