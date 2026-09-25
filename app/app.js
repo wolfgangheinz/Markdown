@@ -162,8 +162,7 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
   let isResizingExplorer = false;
   let explorerStartX = 0;
   let explorerStartWidth = 0;
-  let scrollSyncTarget = null;
-  let scrollSyncRelease = 0;
+  const pendingSynchronizedScrolls = new WeakMap();
   const commandUndoStack = [];
   const commandRedoStack = [];
   const COMMAND_UNDO_LIMIT = 100;
@@ -1115,21 +1114,21 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
   }
 
   function synchronizeScroll(source, target) {
-    if (scrollSyncTarget === source) {
+    const pendingPosition = pendingSynchronizedScrolls.get(source);
+    if (pendingPosition !== undefined) {
+      pendingSynchronizedScrolls.delete(source);
+      if (Math.abs(source.scrollTop - pendingPosition) <= 1) return;
+    }
+    if (!source.getClientRects().length || !target.getClientRects().length) {
       return;
     }
     const sourceRange = source.scrollHeight - source.clientHeight;
     const targetRange = target.scrollHeight - target.clientHeight;
     const progress = sourceRange > 0 ? source.scrollTop / sourceRange : 0;
-    scrollSyncTarget = target;
-    target.scrollTop = targetRange > 0 ? progress * targetRange : 0;
-    if (scrollSyncRelease) {
-      window.cancelAnimationFrame(scrollSyncRelease);
-    }
-    scrollSyncRelease = window.requestAnimationFrame(() => {
-      scrollSyncTarget = null;
-      scrollSyncRelease = 0;
-    });
+    const targetPosition = targetRange > 0 ? progress * targetRange : 0;
+    if (Math.abs(target.scrollTop - targetPosition) <= 1) return;
+    pendingSynchronizedScrolls.set(target, targetPosition);
+    target.scrollTop = targetPosition;
   }
 
   function bindPreviewLinks() {
@@ -1420,6 +1419,8 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
     window.requestAnimationFrame(() => {
       editor.setSelectionRange(Math.min(position.start || 0, editor.value.length), Math.min(position.end || 0, editor.value.length));
       editor.scrollTop = position.editorScroll || 0; previewPane.scrollTop = position.previewScroll || 0;
+      pendingSynchronizedScrolls.set(editor, editor.scrollTop);
+      pendingSynchronizedScrolls.set(previewPane, previewPane.scrollTop);
     });
   }
 
@@ -1851,6 +1852,9 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
     enforceSafeLinks();
     protectExternalMedia();
     renderContextPanels();
+    // Rebuilding the preview can clamp its scroll position. That is a layout
+    // change, not a request to move the editor.
+    pendingSynchronizedScrolls.set(previewPane, previewPane.scrollTop);
   }
 
   function splitYamlFrontmatter(markdown) {
