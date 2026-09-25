@@ -24,12 +24,7 @@ Getting Started
 
 ### 1. Download the App
 
-You can use the GitHub UI without cloning:
-
-1. Go to the repository home page.
-2. Click the green `Code` button.
-3. Select **Download ZIP**.
-4. Extract the archive somewhere on your machine.
+Download the [standalone editor ZIP](https://github.com/wolfgangheinz/Markdown/releases/latest/download/Markdown-Studio.zip) and extract it somewhere on your machine. It contains the editor and its offline dependencies, without the repository's development files.
 
 Alternatively, clone the repo:
 
@@ -88,6 +83,8 @@ Development Notes
 Everything is plain HTML/JS/CSS, so no build tooling is required. If you add third-party libraries (e.g. Mermaid for diagrams), prefer bundling the minified assets locally so the project remains fully offline.
 
 Run the graph model tests with `node --test app/tests/graph.test.js`.
+
+The `.github/workflows/offline-editor.yml` workflow publishes a new standalone ZIP as a GitHub Release asset when the app changes on `main`. The download link above always points to the latest release.
 
 Contributing
 ------------
