@@ -1,0 +1,53 @@
+name: Publish offline editor
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - index.html
+      - app/about.md
+      - app/app.js
+      - app/graph.js
+      - app/styles.css
+      - app/vendor/**
+      - .github/workflows/offline-editor.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: offline-editor-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test graph model
+        run: node --test app/tests/graph.test.js
+
+      - name: Package offline editor
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_root="$RUNNER_TEMP/Markdown-Studio"
+          mkdir -p "$package_root"
+          while IFS= read -r -d '' file; do
+            mkdir -p "$package_root/$(dirname "$file")"
+            cp "$file" "$package_root/$file"
+          done < <(git ls-files -z -- index.html app/about.md app/app.js app/graph.js app/styles.css app/vendor)
+          (cd "$RUNNER_TEMP" && zip -q -r Markdown-Studio.zip Markdown-Studio)
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "offline-editor-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            "$RUNNER_TEMP/Markdown-Studio.zip" \
+            --target "$GITHUB_SHA" \
+            --title "Offline editor ${GITHUB_SHA::7}" \
+            --notes "Standalone offline editor built from ${GITHUB_SHA}." \
+            --latest
