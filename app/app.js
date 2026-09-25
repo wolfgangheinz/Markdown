@@ -88,7 +88,7 @@
       closeButton.focus();
       if (window.location.protocol === 'file:') return;
       try {
-        const response = await fetch('about.md');
+        const response = await fetch('app/about.md');
         if (response.ok && !aboutModal.hidden) renderAbout(await response.text());
       } catch (error) {
         // The bundled copy keeps About available without a server.

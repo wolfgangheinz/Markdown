@@ -17,7 +17,7 @@ Features
 - Light/dark themes and toast notifications for key actions.
 - Autosave status with a final save on browser background/close, plus confirmation before permanently deleting a draft.
 - Visual editing mode that persists with the selected view; remote images are opt-in to avoid background network requests.
-- Marked, DOMPurify, Highlight.js, Mermaid, and Turndown are bundled in `vendor/`; no document contents or runtime dependencies leave the machine.
+- Marked, DOMPurify, Highlight.js, Mermaid, and Turndown are bundled in `app/vendor/`; no document contents or runtime dependencies leave the machine.
 
 Getting Started
 ---------------
@@ -40,7 +40,7 @@ git clone https://github.com/<your-account>/<your-repo>.git
 ### 2. Launch the Editor
 
 1. Open the extracted folder.
-2. Keep the `vendor/` folder alongside `index.html`, then double-click `index.html` or drag it into a modern browser (Edge, Chrome, Safari).
+2. Keep the `app/` folder alongside `index.html`, then double-click `index.html` or drag it into a modern browser (Edge, Chrome, Safari).
 3. Start typing in the Markdown pane; the preview updates automatically. Use **Visual** in the view switcher to write directly in the rendered document, or **Split** to see both representations.
 
 On the first visit, a short **Welcome.md** guide opens in Split view and is saved as the first local draft. Later visits restore existing drafts and the chosen view.
@@ -74,19 +74,20 @@ Project Structure
 -----------------
 
 - `index.html` – Main page with layout and script includes.
-- `styles.css` – App and preview styling (light/dark themes, typography, etc.).
-- `app.js` – Editor logic: workspace and vault features, editing and preview, persistence, file handling, and export.
-- `graph.js` – Folder graph model and layout.
-- `about.md` – The About dialog's Markdown content.
-- `vendor/` – Offline copies of Marked, DOMPurify, Highlight.js, Mermaid, Turndown, and preview styles.
-- `prd.md` – Product requirements reference.
+- `app/styles.css` – App and preview styling (light/dark themes, typography, etc.).
+- `app/app.js` – Editor logic: workspace and vault features, editing and preview, persistence, file handling, and export.
+- `app/graph.js` – Folder graph model and layout.
+- `app/about.md` – The About dialog's Markdown content.
+- `app/vendor/` – Offline copies of Marked, DOMPurify, Highlight.js, Mermaid, Turndown, and preview styles.
+- `app/prd.md` – Product requirements reference.
+- `app/tests/` – Graph model tests.
 
 Development Notes
 -----------------
 
 Everything is plain HTML/JS/CSS, so no build tooling is required. If you add third-party libraries (e.g. Mermaid for diagrams), prefer bundling the minified assets locally so the project remains fully offline.
 
-Run the graph model tests with `node --test tests/graph.test.js`.
+Run the graph model tests with `node --test app/tests/graph.test.js`.
 
 Contributing
 ------------
