@@ -92,7 +92,6 @@
         <button type="button" class="file-btn file-explorer__reconnect" hidden>Reconnect</button>
       </div>
       <div class="file-explorer__tree"></div>
-      <footer class="file-explorer__footer">© 2026 Wolfgang Heinz <span aria-hidden="true">|</span> <button type="button" class="file-explorer__about">About</button></footer>
     </aside>
     <div class="explorer-divider" role="separator" aria-orientation="vertical" aria-label="Resize Explorer" aria-valuemin="140" aria-valuemax="480" aria-valuenow="240" tabindex="0"></div>
     <section class="workspace-center" aria-label="Workspace">
@@ -119,6 +118,10 @@
       <section class="context-panel" data-panel="outline" id="context-outline" role="tabpanel"><div class="context-panel__content" id="outline-panel"></div></section>
       <section class="context-panel" data-panel="backlinks" id="context-backlinks" role="tabpanel" hidden><div class="context-panel__content" id="backlinks-panel"></div></section>
       <section class="context-panel" data-panel="graph" id="context-graph" role="tabpanel" hidden><div class="context-panel__content graph-panel" id="graph-panel"></div></section>
+      <footer class="context-sidebar__footer">
+        <span>© 2026 Wolfgang Heinz <span aria-hidden="true">|</span> <button type="button" class="file-explorer__about">About</button></span>
+        <a class="context-sidebar__download" href="https://github.com/wolfgangheinz/Markdown/archive/refs/heads/main.zip">Download offline editor</a>
+      </footer>
     </aside>
   </main>
   <div class="toast" role="status" aria-live="polite" hidden></div>
