@@ -16,6 +16,10 @@
   const explorerEmptyMessage = document.querySelector('.file-explorer__empty-message');
   const explorerReconnect = document.querySelector('.file-explorer__reconnect');
   const explorerOpenFolder = document.querySelector('.file-explorer__open-folder');
+  const explorerFooter = document.querySelector('.file-explorer__footer');
+  const explorerDisconnect = document.querySelector('.file-explorer__disconnect');
+  const disconnectDialog = document.querySelector('.disconnect-dialog');
+  const disconnectDialogMessage = document.getElementById('disconnect-dialog-message');
   const explorerNewFile = document.querySelector('.file-explorer__new-file');
   const explorerToggles = document.querySelectorAll('[data-action="toggleExplorer"]');
   const main = document.querySelector('.app-main');
@@ -35,6 +39,7 @@
   const storageLabel = draftManager ? draftManager.querySelector('.storage-label') : null;
   const workspaceTabs = document.querySelector('.workspace-tabs');
   const workspacePanes = document.querySelector('.workspace-panes');
+  const workspaceEmpty = document.querySelector('.workspace-empty');
   const contextSidebar = document.querySelector('.context-sidebar');
   const contextRailLabel = document.querySelector('.context-sidebar__rail-label');
   const workspaceModal = document.getElementById('workspace-modal');
@@ -187,6 +192,7 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
   let expandedFolderPaths = new Set();
   let rememberedDirectoryHandle = null;
   let pendingFolderReconnectState = null;
+  let isDisconnectingFolder = false;
   let workspaceSession = { tabs: [], activeTab: null, context: 'outline', contextCollapsed: false, positions: {} };
   let vaultIndex = new Map();
   let graphCache = null;
@@ -252,8 +258,9 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
   restoreExplorer();
   restoreSplit();
   restoreView();
+  restoreWorkspaceSession();
   restoreDocuments();
-  editor.focus();
+  if (getCurrentDocument()) editor.focus();
 
   bindEditor();
   bindToolbar();
@@ -313,6 +320,7 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
   function restoreDocuments() {
     documents = {};
     currentDocumentId = null;
+    let savedWithNoDocument = false;
     const isFirstRun = localStorage.getItem(DOCUMENTS_KEY) === null
       && localStorage.getItem(LEGACY_AUTOSAVE_KEY) === null;
     try {
@@ -320,6 +328,7 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === 'object') {
+          savedWithNoDocument = parsed.currentId === null;
           if (parsed.documents && typeof parsed.documents === 'object') {
             Object.keys(parsed.documents).forEach((id) => {
               const doc = parsed.documents[id];
@@ -353,23 +362,22 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
       console.warn('Document restore failed', err);
     }
 
-    if (!currentDocumentId || !documents[currentDocumentId]) {
+    if ((!currentDocumentId || !documents[currentDocumentId]) && !savedWithNoDocument) {
       const ordered = Object.values(documents).sort((a, b) => b.updatedAt - a.updatedAt);
       currentDocumentId = ordered.length > 0 ? ordered[0].id : null;
     }
 
-    if (!currentDocumentId) {
-      if (isFirstRun) {
-        setEditorView('split');
-      }
+    if (!currentDocumentId && isFirstRun) {
+      setEditorView('split');
       currentDocumentId = createDocument(
-        isFirstRun ? 'Welcome.md' : generateUntitledName(),
-        isFirstRun ? WELCOME_MARKDOWN : '',
+        'Welcome.md',
+        WELCOME_MARKDOWN,
         { persist: false, render: false, focus: false }
       );
     }
 
-    setCurrentDocument(currentDocumentId, { focus: false, skipHistory: true });
+    if (currentDocumentId) setCurrentDocument(currentDocumentId, { focus: false, skipHistory: true });
+    else showEmptyWorkspace({ render: false });
     if (isFirstRun) {
       saveDocumentsToStorage();
     }
@@ -612,6 +620,22 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
       request.onsuccess = () => resolve(request.result || null);
       request.onerror = () => reject(request.error || new Error('Unable to restore folder'));
       transaction.oncomplete = () => database.close();
+    });
+  }
+
+  async function forgetDirectoryHandle() {
+    const database = await openFolderDatabase();
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(FOLDER_STORE, 'readwrite');
+      transaction.objectStore(FOLDER_STORE).delete('current');
+      transaction.oncomplete = () => {
+        database.close();
+        resolve();
+      };
+      transaction.onerror = () => {
+        database.close();
+        reject(transaction.error || new Error('Unable to forget folder'));
+      };
     });
   }
 
@@ -1010,6 +1034,9 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
     if (explorerOpenFolder) {
       explorerOpenFolder.addEventListener('click', () => triggerOpenFolder());
     }
+    if (explorerDisconnect) {
+      explorerDisconnect.addEventListener('click', disconnectFolder);
+    }
   }
 
   function bindExplorerControls() {
@@ -1282,7 +1309,7 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
     main.classList.remove('live-preview');
     main.classList.toggle('markdown-only', chosen === 'editor');
     main.classList.toggle('show-preview', chosen === 'preview');
-    preview.contentEditable = chosen === 'wysiwyg' ? 'true' : 'false';
+    preview.contentEditable = chosen === 'wysiwyg' && getCurrentDocument() ? 'true' : 'false';
     preview.setAttribute('role', chosen === 'wysiwyg' ? 'textbox' : 'article');
     preview.setAttribute('aria-label', chosen === 'wysiwyg' ? 'Visual Markdown editor' : 'Markdown preview');
     preview.setAttribute('aria-live', 'off');
@@ -1294,7 +1321,7 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
     if (wasVisual && chosen !== 'wysiwyg') {
       updatePreview();
     }
-    if (chosen === 'wysiwyg') {
+    if (chosen === 'wysiwyg' && getCurrentDocument()) {
       updatePreview();
       preview.querySelectorAll('li input[type="checkbox"]').forEach((checkbox) => {
         checkbox.disabled = false;
@@ -1311,8 +1338,15 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
   }
 
   function bindWorkspace() {
-    restoreWorkspaceSession();
     ensureWorkspaceTab(currentDocumentId);
+    if (workspaceEmpty) {
+      workspaceEmpty.addEventListener('click', (event) => {
+        const action = event.target.closest('[data-empty-action]')?.dataset.emptyAction;
+        if (action === 'new') createDocument(generateUntitledName(), '', { focus: true });
+        if (action === 'drafts') openDraftManager();
+        if (action === 'folder') triggerOpenFolder();
+      });
+    }
     if (workspaceTabs) {
       workspaceTabs.addEventListener('click', (event) => {
         const close = event.target.closest('[data-close-tab]');
@@ -1417,6 +1451,7 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
     const position = workspaceSession.positions[id];
     if (!position) return;
     window.requestAnimationFrame(() => {
+      if (currentDocumentId !== id) return;
       editor.setSelectionRange(Math.min(position.start || 0, editor.value.length), Math.min(position.end || 0, editor.value.length));
       editor.scrollTop = position.editorScroll || 0; previewPane.scrollTop = position.previewScroll || 0;
       pendingSynchronizedScrolls.set(editor, editor.scrollTop);
@@ -1435,26 +1470,47 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
     const index = workspaceSession.tabs.indexOf(id);
     if (index < 0) return;
     const doc = documents[id];
+    const wasCurrent = currentDocumentId === id;
+    if (wasCurrent) {
+      if (isVisualMode() && !syncVisualToMarkdown()) return;
+      doc.content = editor.value;
+    }
     if (isDocumentDirty(doc) && !folderAutosaveEnabled) {
       const save = window.confirm(`“${doc.name}” has unsaved changes. Save before closing? Choose Cancel to close without saving.`);
       if (save && !await saveFolderDocument(doc)) return;
     }
-    captureWorkspacePosition(id);
+    if (wasCurrent) {
+      captureWorkspacePosition(id);
+    }
     workspaceSession.tabs.splice(index, 1);
-    if (workspaceSession.activeTab === id) {
+    if (wasCurrent) {
       const replacement = workspaceSession.tabs[index] || workspaceSession.tabs[index - 1] || null;
       workspaceSession.activeTab = replacement;
       if (replacement && documents[replacement]) setCurrentDocument(replacement);
+      else showEmptyWorkspace();
+    } else if (workspaceSession.activeTab === id) {
+      workspaceSession.activeTab = currentDocumentId;
     }
-    persistWorkspaceSession(); renderWorkspaceTabs();
+    saveDocumentsToStorage(false);
+    persistWorkspaceSession(); renderWorkspace();
   }
 
-  function renderWorkspace() { renderWorkspaceTabs(); renderContextPanels(); }
+  function renderWorkspace() {
+    const hasDocument = Boolean(getCurrentDocument());
+    if (workspacePanes) {
+      workspacePanes.hidden = !hasDocument;
+      if (!hasDocument) workspacePanes.removeAttribute('aria-labelledby');
+    }
+    if (workspaceEmpty) workspaceEmpty.hidden = hasDocument;
+    renderWorkspaceTabs();
+    renderContextPanels();
+  }
 
   function renderWorkspaceTabs() {
     if (!workspaceTabs) return;
     workspaceTabs.replaceChildren();
     workspaceSession.tabs = workspaceSession.tabs.filter((id) => documents[id]);
+    workspaceTabs.hidden = workspaceSession.tabs.length === 0;
     workspaceSession.tabs.forEach((id) => {
       const doc = documents[id]; const tabGroup = document.createElement('div'); tabGroup.className = 'workspace-tab-group'; const tab = document.createElement('button');
       tab.type = 'button'; tab.id = `workspace-tab-${id}`; tab.className = 'workspace-tab'; tab.dataset.tabId = id; tab.setAttribute('role', 'tab'); tab.setAttribute('aria-selected', String(id === currentDocumentId)); tab.setAttribute('aria-controls', 'workspace-panes');
@@ -2139,19 +2195,19 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
     window.clearTimeout(visualSyncTimer);
     visualSyncTimer = 0;
     if (!isVisualMode() || !turndownService) {
-      return;
+      return false;
     }
     let markdown;
     try {
       markdown = turndownService.turndown(preview.innerHTML).replace(/\r\n?/g, '\n');
     } catch (error) {
       console.warn('Visual editor conversion failed', error);
-      return;
+      return false;
     }
     const frontmatter = splitYamlFrontmatter(editor.value).frontmatter;
     markdown = frontmatter + markdown;
     if (markdown === editor.value) {
-      return;
+      return true;
     }
     isSyncingVisual = true;
     editor.value = markdown;
@@ -2163,6 +2219,7 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
     scheduleAutosave();
     updateActiveVaultIndex();
     isSyncingVisual = false;
+    return true;
   }
 
   function applyVisualFormatting(action) {
@@ -2883,6 +2940,27 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
     return documents[currentDocumentId];
   }
 
+  function showEmptyWorkspace(options = {}) {
+    currentDocumentId = null;
+    workspaceSession.activeTab = null;
+    activeFolderPath = null;
+    currentFileHandle = null;
+    currentFileName = 'Untitled.md';
+    editor.value = '';
+    editor.disabled = true;
+    preview.replaceChildren();
+    preview.contentEditable = 'false';
+    if (editorSyntax) editorSyntax.textContent = '';
+    if (previewTimer) window.clearTimeout(previewTimer);
+    previewTimer = 0;
+    clearCommandHistory();
+    toolbars.forEach((bar) => bar.querySelectorAll('button[data-action]').forEach((button) => { button.disabled = true; }));
+    updateDocumentTitle();
+    setSaveStatus('No document open');
+    if (options.render !== false) renderWorkspace();
+    renderDraftList();
+  }
+
   function setCurrentDocument(id, options = {}) {
     const doc = id && documents[id] ? documents[id] : null;
     if (!doc) {
@@ -2892,6 +2970,9 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
       captureWorkspacePosition(currentDocumentId);
     }
     currentDocumentId = id;
+    editor.disabled = false;
+    preview.contentEditable = isVisualMode() ? 'true' : 'false';
+    toolbars.forEach((bar) => bar.querySelectorAll('button[data-action]').forEach((button) => { button.disabled = false; }));
     activeFolderPath = folderPathsByDocumentId.get(id)
       || (openedFolder && doc.folderId === openedFolder.id ? doc.folderPath : null)
       || null;
@@ -2922,7 +3003,8 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
       return;
     }
     const doc = getCurrentDocument();
-    docTitleInput.value = doc ? doc.name : 'Untitled.md';
+    docTitleInput.value = doc ? doc.name : 'No document open';
+    docTitleInput.disabled = !doc;
     docTitleInput.title = doc ? doc.name : '';
   }
 
@@ -3460,6 +3542,7 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
   }
 
   async function triggerOpenFolder(options = {}) {
+    if (isDisconnectingFolder) return;
     if (supportsDirectoryAccess) {
       try {
         const pickerOptions = { mode: 'readwrite', id: 'markdown-studio-folder' };
@@ -3617,6 +3700,97 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
     }
   }
 
+  function askDisconnectDecision(folderName, dirtyCount) {
+    if (!disconnectDialog || !disconnectDialogMessage) return Promise.resolve('cancel');
+    const fileLabel = dirtyCount === 1 ? 'file has' : 'files have';
+    disconnectDialogMessage.textContent = `${dirtyCount} ${fileLabel} unsaved changes in “${folderName}”. Save the changes before disconnecting, or discard them?`;
+    disconnectDialog.returnValue = 'cancel';
+    return new Promise((resolve) => {
+      disconnectDialog.addEventListener('close', () => resolve(disconnectDialog.returnValue), { once: true });
+      disconnectDialog.showModal();
+    });
+  }
+
+  async function disconnectFolder() {
+    if (!openedFolder || isDisconnectingFolder) return;
+    const folder = openedFolder;
+    isDisconnectingFolder = true;
+    if (explorerDisconnect) explorerDisconnect.disabled = true;
+    const wasInert = main.inert;
+    main.inert = true;
+    try {
+      if (isVisualMode() && !syncVisualToMarkdown()) {
+        showToast('Unable to prepare visual changes for saving');
+        return;
+      }
+      const current = getCurrentDocument();
+      if (current && current.folderId === folder.id) current.content = editor.value;
+      const folderDocuments = Object.values(documents).filter((doc) => doc.folderId === folder.id);
+      const dirtyDocuments = folderDocuments.filter(isDocumentDirty);
+      if (autosaveTimer) window.clearTimeout(autosaveTimer);
+      autosaveTimer = 0;
+
+      if (dirtyDocuments.length) {
+        const decision = await askDisconnectDecision(folder.name, dirtyDocuments.length);
+        if (decision === 'cancel' || openedFolder !== folder) return;
+        if (decision === 'save') {
+          for (const doc of dirtyDocuments) {
+            if (!await saveFolderDocument(doc)) return;
+          }
+        }
+      }
+      if (openedFolder !== folder) return;
+
+      try {
+        await forgetDirectoryHandle();
+      } catch (error) {
+        console.warn('Unable to remove remembered folder handle', error);
+      }
+      if (openedFolder !== folder) return;
+      localStorage.removeItem(FOLDER_STATE_KEY);
+      rememberedDirectoryHandle = null;
+      pendingFolderReconnectState = null;
+      if (folderInput) folderInput.value = '';
+
+      const folderDocumentIdsToClose = new Set(folderDocuments.map((doc) => doc.id));
+      folderDocuments.forEach((doc) => {
+        fileHandles.delete(doc.id);
+        delete documents[doc.id];
+        delete workspaceSession.positions[doc.id];
+      });
+      workspaceSession.tabs = workspaceSession.tabs.filter((id) => !folderDocumentIdsToClose.has(id));
+      openedFolder = null;
+      selectedFolderPath = null;
+      expandedFolderPaths.clear();
+      folderEntries.clear();
+      folderPathLookup.clear();
+      folderDocumentIds.clear();
+      folderPathsByDocumentId.clear();
+      vaultIndex.clear();
+      graphCache = null;
+      graphPanelCache = null;
+      graphPanelActivePath = null;
+      pendingLinkInsert = null;
+      if (previewTimer) window.clearTimeout(previewTimer);
+      previewTimer = 0;
+
+      showEmptyWorkspace();
+      updateFolderAutosaveControl();
+      renderFolderExplorer();
+      saveDocumentsToStorage(false);
+      persistWorkspaceSession();
+      showToast(`Disconnected ${folder.name}`);
+    } finally {
+      main.inert = wasInert;
+      isDisconnectingFolder = false;
+      if (explorerDisconnect) explorerDisconnect.disabled = false;
+      if (openedFolder === folder) {
+        saveDocumentsToStorage(false);
+        if (isDocumentDirty(getCurrentDocument())) scheduleAutosave();
+      }
+    }
+  }
+
   function indexFolderFiles(node) {
     node.children.forEach((child) => {
       if (child.type === 'directory') {
@@ -3705,6 +3879,7 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
     explorerName.title = openedFolder ? openedFolder.name : '';
     explorerTree.replaceChildren();
     explorerEmpty.hidden = Boolean(openedFolder);
+    if (explorerFooter) explorerFooter.hidden = !openedFolder;
     if (explorerEmptyMessage) {
       explorerEmptyMessage.textContent = 'Open a folder to browse Markdown files.';
     }

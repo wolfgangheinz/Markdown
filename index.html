@@ -92,6 +92,9 @@
         <button type="button" class="file-btn file-explorer__reconnect" hidden>Reconnect</button>
       </div>
       <div class="file-explorer__tree"></div>
+      <footer class="file-explorer__footer" hidden>
+        <button type="button" class="file-btn file-explorer__disconnect">Disconnect Folder</button>
+      </footer>
     </aside>
     <div class="explorer-divider" role="separator" aria-orientation="vertical" aria-label="Resize Explorer" aria-valuemin="140" aria-valuemax="480" aria-valuenow="240" tabindex="0"></div>
     <section class="workspace-center" aria-label="Workspace">
@@ -105,6 +108,15 @@
     <section class="pane preview-pane" aria-label="Markdown preview" aria-live="off">
       <article id="preview" class="markdown-body"></article>
     </section>
+      </div>
+      <div class="workspace-empty" hidden>
+        <h2>No document open</h2>
+        <p>Choose how to start.</p>
+        <div class="workspace-empty__actions">
+          <button type="button" class="file-btn" data-empty-action="new">Create new file</button>
+          <button type="button" class="file-btn" data-empty-action="drafts">Open draft</button>
+          <button type="button" class="file-btn" data-empty-action="folder">Open Folder</button>
+        </div>
       </div>
     </section>
     <aside class="context-sidebar" aria-label="Note context">
@@ -125,6 +137,15 @@
     </aside>
   </main>
   <div class="toast" role="status" aria-live="polite" hidden></div>
+  <dialog class="disconnect-dialog" aria-labelledby="disconnect-dialog-title" aria-describedby="disconnect-dialog-message">
+    <h2 id="disconnect-dialog-title">Disconnect folder?</h2>
+    <p id="disconnect-dialog-message"></p>
+    <form method="dialog">
+      <button type="submit" value="cancel" class="file-btn">Cancel</button>
+      <button type="submit" value="discard" class="file-btn">Discard changes</button>
+      <button type="submit" value="save" class="file-btn" autofocus>Save and disconnect</button>
+    </form>
+  </dialog>
   <div class="about-modal" hidden>
     <div class="about-modal__backdrop" data-action="closeAbout"></div>
     <section class="about-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="about-modal-title">

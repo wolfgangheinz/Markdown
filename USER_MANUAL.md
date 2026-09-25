@@ -100,6 +100,10 @@ Some browsers offer only a folder picker that supplies read-only copies. In that
 
 The **Local / Disk** toggle beside the document name appears when a folder is open. Switch **Autosave to disk** off if you want to review changes before writing them to the folder. The save status at the top reports local saving, disk saving, unsaved changes, or an error. When disk autosave is off, the browser may warn you before closing with unsaved folder changes; saving a local copy does not write the original file.
 
+Use **Disconnect Folder** at the bottom of the Explorer to close that folder's files and return the sidebar to its empty state. The editor then shows **Create new file**, **Open draft**, and **Open Folder**; it does not select a different draft automatically. If any folder files have unsaved changes, choose **Save and disconnect**, **Discard changes**, or **Cancel**. If a file cannot be saved, the folder stays open so you can resolve it or choose to discard the changes. Other drafts remain available through **Open draft**.
+
+Closing the last document tab also shows this empty workspace. The closed draft remains in local storage until you delete it from the draft manager.
+
 **File → Clear Draft** behaves differently for folder files: it reverts the current note after confirmation. With disk autosave on, it restores the version from when the file was opened **and writes that version to disk**. With disk autosave off, it discards unsaved edits and restores the last saved version. Check the confirmation message before proceeding.
 
 ## Navigate a folder of notes
