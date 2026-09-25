@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - index.html
+      - USER_MANUAL.md
       - app/about.md
       - app/app.js
       - app/graph.js
@@ -38,7 +39,7 @@ jobs:
           while IFS= read -r -d '' file; do
             mkdir -p "$package_root/$(dirname "$file")"
             cp "$file" "$package_root/$file"
-          done < <(git ls-files -z -- index.html app/about.md app/app.js app/graph.js app/styles.css app/vendor)
+          done < <(git ls-files -z -- index.html USER_MANUAL.md app/about.md app/app.js app/graph.js app/styles.css app/vendor)
           (cd "$RUNNER_TEMP" && zip -q -r Markdown-Studio.zip Markdown-Studio)
 
       - name: Publish release

@@ -26,6 +26,8 @@ Getting Started
 
 Download the [standalone editor ZIP](https://github.com/wolfgangheinz/Markdown/releases/latest/download/Markdown-Studio.zip) and extract it somewhere on your machine. It contains the editor and its offline dependencies, without the repository's development files.
 
+The ZIP includes a detailed [user manual](USER_MANUAL.md) covering editing, local storage, folder permissions, saving, navigation, and shortcuts.
+
 Alternatively, clone the repo:
 
 ```
