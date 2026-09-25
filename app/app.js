@@ -40,6 +40,9 @@
   const workspaceTabs = document.querySelector('.workspace-tabs');
   const workspacePanes = document.querySelector('.workspace-panes');
   const workspaceEmpty = document.querySelector('.workspace-empty');
+  const workspaceEmptyTitle = workspaceEmpty?.querySelector('h2');
+  const workspaceEmptyMessage = workspaceEmpty?.querySelector('p');
+  const workspaceEmptyActions = workspaceEmpty?.querySelector('.workspace-empty__actions');
   const contextSidebar = document.querySelector('.context-sidebar');
   const contextRailLabel = document.querySelector('.context-sidebar__rail-label');
   const workspaceModal = document.getElementById('workspace-modal');
@@ -492,7 +495,7 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
 
   function isFolderDocument(doc) {
     return Boolean(doc && openedFolder && doc.folderPath
-      && (doc.folderId === openedFolder.id || folderEntries.has(doc.folderPath)));
+      && doc.folderId === openedFolder.id);
   }
 
   function isDocumentDirty(doc) {
@@ -658,7 +661,7 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
         ? await saved.handle.queryPermission({ mode: 'readwrite' })
         : 'granted';
       if (permission === 'granted') {
-        await connectDirectoryHandle(saved.handle, state, false);
+        await connectDirectoryHandle(saved.handle, state);
       }
     } catch (error) {
       console.warn('Folder connection restore failed', error);
@@ -679,19 +682,17 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
         showToast('Folder access was not granted');
         return;
       }
-      await connectDirectoryHandle(rememberedDirectoryHandle, state, true);
+      await connectDirectoryHandle(rememberedDirectoryHandle, state);
     } catch (error) {
       console.error(error);
       showToast('Unable to reconnect folder');
     }
   }
 
-  async function connectDirectoryHandle(handle, state, notify) {
+  async function connectDirectoryHandle(handle, state) {
     const rootNode = await readDirectoryTree(handle, '');
     await activateFolder(rootNode, handle.name || state.name, handle, {
-      id: state.id,
-      initialPath: state.activePath,
-      notify
+      id: state.id
     });
   }
 
@@ -1502,6 +1503,15 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
       if (!hasDocument) workspacePanes.removeAttribute('aria-labelledby');
     }
     if (workspaceEmpty) workspaceEmpty.hidden = hasDocument;
+    if (workspaceEmptyActions) workspaceEmptyActions.hidden = Boolean(openedFolder);
+    if (!hasDocument && workspaceEmptyTitle && workspaceEmptyMessage) {
+      workspaceEmptyTitle.textContent = openedFolder ? `Folder “${openedFolder.name}” loaded` : 'No document open';
+      workspaceEmptyMessage.textContent = !openedFolder
+        ? 'Choose how to start.'
+        : folderEntries.size
+          ? 'Select a file in the Explorer on the left to open it.'
+          : 'No Markdown files were found in this folder.';
+    }
     renderWorkspaceTabs();
     renderContextPanels();
   }
@@ -2953,6 +2963,8 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
     if (editorSyntax) editorSyntax.textContent = '';
     if (previewTimer) window.clearTimeout(previewTimer);
     previewTimer = 0;
+    if (visualSyncTimer) window.clearTimeout(visualSyncTimer);
+    visualSyncTimer = 0;
     clearCommandHistory();
     toolbars.forEach((bar) => bar.querySelectorAll('button[data-action]').forEach((button) => { button.disabled = true; }));
     updateDocumentTitle();
@@ -3565,8 +3577,7 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
         }
         const rootNode = await readDirectoryTree(directoryHandle, '');
         await activateFolder(rootNode, directoryHandle.name, directoryHandle, {
-          id: folderId,
-          initialPath: isReconnect ? reconnectState.activePath : null
+          id: folderId
         });
       } catch (error) {
         if (error && error.name !== 'AbortError') {
@@ -3633,8 +3644,7 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
     sortFolderChildren(rootNode);
     const isReconnect = reconnectState && reconnectState.name === rootName;
     await activateFolder(rootNode, rootName, null, {
-      id: isReconnect ? reconnectState.id : generateFolderId(),
-      initialPath: isReconnect ? reconnectState.activePath : null
+      id: isReconnect ? reconnectState.id : generateFolderId()
     });
   }
 
@@ -3659,6 +3669,15 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
   }
 
   async function activateFolder(rootNode, name, directoryHandle, options = {}) {
+    const current = getCurrentDocument();
+    if (current) {
+      if (isVisualMode() && !syncVisualToMarkdown()) {
+        showToast('Unable to prepare visual changes before opening the folder');
+        return;
+      }
+      current.content = editor.value;
+      captureWorkspacePosition(current.id);
+    }
     const folderId = options.id || generateFolderId();
     openedFolder = { id: folderId, name, handle: directoryHandle, root: rootNode };
     updateFolderAutosaveControl();
@@ -3683,21 +3702,10 @@ Drafts save automatically in this browser; find them under **File → Drafts**. 
       }
     });
     renderFolderExplorer();
-    const current = getCurrentDocument();
-    const rememberedPath = normalizeFolderPath(options.initialPath || '');
-    const currentPath = current && current.folderId === folderId ? current.folderPath : null;
-    const targetPath = folderEntries.has(rememberedPath)
-      ? rememberedPath
-      : folderEntries.has(currentPath) ? currentPath : folderEntries.keys().next().value;
-    if (targetPath) {
-      await openFolderFile(targetPath);
-      if (options.notify !== false) {
-        showToast(`Opened ${name}`);
-      }
-    } else {
-      showToast('No Markdown files found');
-      saveFolderState();
-    }
+    showEmptyWorkspace();
+    saveFolderState();
+    saveDocumentsToStorage(false);
+    persistWorkspaceSession();
   }
 
   function askDisconnectDecision(folderName, dirtyCount) {

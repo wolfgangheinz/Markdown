@@ -339,6 +339,7 @@ body {
 .workspace-empty h2 { margin:0 0 .4rem; font-size:1.25rem; }
 .workspace-empty p { margin:0 0 1.2rem; color:color-mix(in srgb, var(--fg) 65%, transparent); }
 .workspace-empty__actions { display:flex; flex-wrap:wrap; justify-content:center; gap:.6rem; }
+.workspace-empty__actions[hidden] { display:none; }
 .workspace-tabs { display:flex; min-height:34px; overflow:auto; border-bottom:1px solid var(--border); background:var(--header-bg); }
 .workspace-tabs[hidden] { display:none; }
 .workspace-tab-group { display:flex; align-items:center; border-right:1px solid var(--border); }
@@ -799,7 +800,7 @@ body.resizing-explorer {
 .editor-syntax,
 .editor-pane textarea {
   font-family:"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-  font-size:.82rem;
+  font-size:.85rem;
   line-height:1.55;
   padding:1rem;
 }
@@ -837,7 +838,7 @@ body.resizing-explorer {
   color: inherit;
   /* Keep the rendered document at its established reading size. The source
      editor alone uses the compact size requested for Markdown editing. */
-  font-size: 0.97rem;
+  font-size: 0.92rem;
   line-height: 1.65;
 }
 

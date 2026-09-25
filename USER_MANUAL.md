@@ -85,7 +85,7 @@ Outside an opened folder, **File → Save** (or **Ctrl/⌘+S**) downloads the cu
 
 ### Open a folder of notes
 
-Choose **File → Open Folder** or **Open Folder** in the Explorer. If your browser supports writable folder access, approve the browser's permission prompt. The Explorer lists `.md` and `.markdown` files, including files in subfolders. Click a filename to open it; click a folder name to expand or select that folder. The **+** button creates a new Markdown file in the selected folder when write access is available.
+Choose **File → Open Folder** or **Open Folder** in the Explorer. If your browser supports writable folder access, approve the browser's permission prompt. The workspace confirms that the folder loaded and waits for you to select a file. The Explorer lists `.md` and `.markdown` files, including files in subfolders. Click a filename to open it; click a folder name to expand or select that folder. The **+** button creates a new Markdown file in the selected folder when write access is available.
 
 Some browsers offer only a folder picker that supplies read-only copies. In that case, you can browse and edit notes as local drafts, but the app cannot write changes back to the original folder. Use **File → Save As** to export a copy. If the app shows **Reconnect** after reopening, select the folder again and grant access as needed. Folder permissions and remembered connections depend on the browser.
 
