@@ -35,9 +35,9 @@ jobs:
           set -euo pipefail
           package_root="$RUNNER_TEMP/Markdown-Studio"
           mkdir -p "$package_root"
-          while IFS= read -r -d '' path; do
-            mkdir -p "$package_root/$(dirname "$path")"
-            cp "$path" "$package_root/$path"
+          while IFS= read -r -d '' file; do
+            mkdir -p "$package_root/$(dirname "$file")"
+            cp "$file" "$package_root/$file"
           done < <(git ls-files -z -- index.html app/about.md app/app.js app/graph.js app/styles.css app/vendor)
           (cd "$RUNNER_TEMP" && zip -q -r Markdown-Studio.zip Markdown-Studio)
 
